@@ -80,8 +80,43 @@ namespace EZStreamer.Views
         {
             var settings = _settingsService.LoadSettings();
             
-            // Apply settings to UI - using settings object directly since controls are in UserControls
-            // The actual UI control updates should be handled by the individual UserControls
+            // Apply settings to UI
+            EnableChatCommandsCheckBox.IsChecked = settings.EnableChatCommands;
+            EnableChannelPointsCheckBox.IsChecked = settings.EnableChannelPoints;
+            MaxQueueLengthTextBox.Text = settings.MaxQueueLength.ToString();
+            ChatCommandTextBox.Text = settings.ChatCommand;
+            RequestCooldownTextBox.Text = settings.SongRequestCooldown.ToString();
+            
+            // Music settings
+            PreferredMusicSourceComboBox.SelectedIndex = settings.PreferredMusicSource == "Spotify" ? 0 : 1;
+            AutoPlayNextSongCheckBox.IsChecked = settings.AutoPlayNextSong;
+            ShowYouTubePlayerCheckBox.IsChecked = true; // Default for new setting
+            
+            // OBS settings
+            OBSServerTextBox.Text = settings.OBSServerIP;
+            OBSPortTextBox.Text = settings.OBSServerPort.ToString();
+            OBSAutoConnectCheckBox.IsChecked = settings.OBSAutoConnect;
+            OBSSceneSwitchingCheckBox.IsChecked = settings.OBSSceneSwitchingEnabled;
+            
+            // Overlay settings
+            var overlayThemeIndex = settings.OverlayTheme switch
+            {
+                "Minimal" => 1,
+                "Neon" => 2,
+                "Classic" => 3,
+                _ => 0
+            };
+            OverlayThemeComboBox.SelectedIndex = overlayThemeIndex;
+            OverlayShowAlbumArtCheckBox.IsChecked = settings.OverlayShowAlbumArt;
+            OverlayShowRequesterCheckBox.IsChecked = settings.OverlayShowRequester;
+            OverlayDurationTextBox.Text = settings.OverlayDisplayDuration.ToString();
+            
+            // Advanced settings
+            AllowExplicitContentCheckBox.IsChecked = settings.AllowExplicitContent;
+            RequireFollowersOnlyCheckBox.IsChecked = settings.RequireFollowersOnly;
+            RequireSubscribersOnlyCheckBox.IsChecked = settings.RequireSubscribersOnly;
+            MinDurationTextBox.Text = settings.MinStreamDuration.ToString();
+            MaxDurationTextBox.Text = settings.MaxStreamDuration.ToString();
             
             // Try to connect services if tokens exist
             if (!string.IsNullOrEmpty(settings.TwitchAccessToken))
@@ -141,6 +176,21 @@ namespace EZStreamer.Views
                 (Style)FindResource("DisconnectedStatus");
             SpotifyStatusSettings.Style = SpotifyStatusIndicator.Style;
             SpotifyConnectButton.Content = spotifyConnected ? "Disconnect" : "Connect";
+            
+            // Update YouTube status
+            var youtubeConnected = _youtubeMusicService.IsConnected;
+            YouTubeStatusSettings.Style = youtubeConnected ? 
+                (Style)FindResource("ConnectedStatus") : 
+                (Style)FindResource("DisconnectedStatus");
+            YouTubeConnectButton.Content = youtubeConnected ? "Disconnect" : "Connect";
+            
+            // Update OBS status
+            var obsConnected = _obsService.IsConnected;
+            OBSStatusIndicator.Style = obsConnected ? 
+                (Style)FindResource("ConnectedStatus") : 
+                (Style)FindResource("DisconnectedStatus");
+            OBSStatusText.Text = obsConnected ? $"Connected ({_obsService.ConnectionInfo})" : "Disconnected";
+            OBSConnectButton.Content = obsConnected ? "Disconnect" : "Connect to OBS";
         }
 
         #region Event Handlers
@@ -325,8 +375,11 @@ namespace EZStreamer.Views
             }
             else
             {
-                // Use default settings for now since controls are in UserControls
-                var success = await _obsService.ConnectAsync("localhost", 4455, "");
+                var serverIP = OBSServerTextBox.Text;
+                var serverPort = int.TryParse(OBSPortTextBox.Text, out int port) ? port : 4455;
+                var password = OBSPasswordBox.Password;
+
+                var success = await _obsService.ConnectAsync(serverIP, serverPort, password);
                 if (!success)
                 {
                     MessageBox.Show("Failed to connect to OBS. Please check your settings.", "Connection Failed",
@@ -422,8 +475,12 @@ namespace EZStreamer.Views
 
         private void OverlayTheme_Changed(object sender, SelectionChangedEventArgs e)
         {
-            // Placeholder - theme change should be handled by settings UserControl
-            SaveCurrentSettings();
+            if (OverlayThemeComboBox.SelectedItem is ComboBoxItem item)
+            {
+                var theme = item.Tag.ToString();
+                _overlayService.CreateCustomOverlay(theme);
+                SaveCurrentSettings();
+            }
         }
 
         private void ResetSettings_Click(object sender, RoutedEventArgs e)
@@ -574,9 +631,52 @@ namespace EZStreamer.Views
         {
             try
             {
-                // Since UI controls are now in UserControls, this is a placeholder
-                // The actual saving should be handled by the individual UserControls
                 var settings = _settingsService.LoadSettings();
+                
+                // Update settings from UI
+                settings.EnableChatCommands = EnableChatCommandsCheckBox.IsChecked ?? true;
+                settings.EnableChannelPoints = EnableChannelPointsCheckBox.IsChecked ?? true;
+                settings.ChatCommand = ChatCommandTextBox.Text;
+                
+                if (int.TryParse(MaxQueueLengthTextBox.Text, out int maxQueue))
+                    settings.MaxQueueLength = maxQueue;
+                if (int.TryParse(RequestCooldownTextBox.Text, out int cooldown))
+                    settings.SongRequestCooldown = cooldown;
+                
+                // Music settings
+                settings.PreferredMusicSource = PreferredMusicSourceComboBox.SelectedIndex == 0 ? "Spotify" : "YouTube";
+                settings.AutoPlayNextSong = AutoPlayNextSongCheckBox.IsChecked ?? true;
+                
+                // OBS settings
+                settings.OBSServerIP = OBSServerTextBox.Text;
+                if (int.TryParse(OBSPortTextBox.Text, out int port))
+                    settings.OBSServerPort = port;
+                settings.OBSServerPassword = OBSPasswordBox.Password;
+                settings.OBSAutoConnect = OBSAutoConnectCheckBox.IsChecked ?? false;
+                settings.OBSSceneSwitchingEnabled = OBSSceneSwitchingCheckBox.IsChecked ?? false;
+                
+                // Overlay settings
+                settings.OverlayTheme = OverlayThemeComboBox.SelectedIndex switch
+                {
+                    1 => "Minimal",
+                    2 => "Neon", 
+                    3 => "Classic",
+                    _ => "Default"
+                };
+                settings.OverlayShowAlbumArt = OverlayShowAlbumArtCheckBox.IsChecked ?? true;
+                settings.OverlayShowRequester = OverlayShowRequesterCheckBox.IsChecked ?? true;
+                if (int.TryParse(OverlayDurationTextBox.Text, out int duration))
+                    settings.OverlayDisplayDuration = duration;
+                
+                // Advanced settings
+                settings.AllowExplicitContent = AllowExplicitContentCheckBox.IsChecked ?? true;
+                settings.RequireFollowersOnly = RequireFollowersOnlyCheckBox.IsChecked ?? false;
+                settings.RequireSubscribersOnly = RequireSubscribersOnlyCheckBox.IsChecked ?? false;
+                if (int.TryParse(MinDurationTextBox.Text, out int minDur))
+                    settings.MinStreamDuration = minDur;
+                if (int.TryParse(MaxDurationTextBox.Text, out int maxDur))
+                    settings.MaxStreamDuration = maxDur;
+                
                 _settingsService.SaveSettings(settings);
             }
             catch (Exception ex)
