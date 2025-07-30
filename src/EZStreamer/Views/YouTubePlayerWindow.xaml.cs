@@ -384,7 +384,6 @@ namespace EZStreamer.Views
                 if (YouTubeWebView?.CoreWebView2 != null)
                 {
                     YouTubeWebView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
-                    YouTubeWebView.CoreWebView2 = null;
                 }
             }
             catch
@@ -409,10 +408,11 @@ namespace EZStreamer.Views
                 // Allow closing during shutdown or if main window is closed
                 try
                 {
-                    // Clean up WebView2 resources
-                    if (YouTubeWebView?.CoreWebView2 != null)
+                    // Clean up WebView2 resources properly
+                    if (YouTubeWebView != null)
                     {
-                        YouTubeWebView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                        // Dispose the WebView2 control which will clean up the CoreWebView2
+                        YouTubeWebView.Dispose();
                     }
                 }
                 catch
