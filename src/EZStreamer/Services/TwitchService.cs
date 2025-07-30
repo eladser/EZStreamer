@@ -104,6 +104,12 @@ namespace EZStreamer.Services
             }
         }
 
+        // Simplified connect method for MainWindow compatibility
+        public void Connect(string accessToken)
+        {
+            Task.Run(async () => await Connect(accessToken, null));
+        }
+
         public void Disconnect()
         {
             try
@@ -159,6 +165,12 @@ namespace EZStreamer.Services
             {
                 throw new Exception($"Failed to update stream info: {ex.Message}", ex);
             }
+        }
+
+        // Simplified update method for MainWindow compatibility
+        public void UpdateStreamInfo(string title, string category)
+        {
+            Task.Run(async () => await UpdateStreamInfo(title, category));
         }
 
         public void SendChatMessage(string message)
