@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
+using System.Windows;
 using EZStreamer.Models;
+using EZStreamer.Views;
 
 namespace EZStreamer.Services
 {
@@ -11,6 +13,7 @@ namespace EZStreamer.Services
     {
         private bool _isConnected;
         private SongRequest _currentSong;
+        private YouTubePlayerWindow _playerWindow;
 
         public bool IsConnected => _isConnected;
         public SongRequest CurrentSong => _currentSong;
@@ -29,6 +32,19 @@ namespace EZStreamer.Services
         {
             try
             {
+                // Initialize the YouTube player window
+                if (_playerWindow == null)
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        _playerWindow = new YouTubePlayerWindow();
+                        _playerWindow.SongStarted += OnPlayerSongStarted;
+                        _playerWindow.SongEnded += OnPlayerSongEnded;
+                        _playerWindow.SongPaused += OnPlayerSongPaused;
+                        _playerWindow.SongResumed += OnPlayerSongResumed;
+                    });
+                }
+
                 _isConnected = true;
                 Connected?.Invoke(this, EventArgs.Empty);
             }
@@ -42,6 +58,16 @@ namespace EZStreamer.Services
         {
             _isConnected = false;
             _currentSong = null;
+            
+            if (_playerWindow != null)
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    _playerWindow.Close();
+                    _playerWindow = null;
+                });
+            }
+            
             Disconnected?.Invoke(this, EventArgs.Empty);
         }
 
@@ -52,28 +78,32 @@ namespace EZStreamer.Services
                 if (!_isConnected)
                     return new List<SongRequest>();
 
-                // For MVP, we'll create a simple YouTube search URL approach
-                // In a production app, you'd integrate with YouTube Data API
+                // For MVP, we'll simulate YouTube search results
+                // In production, this would use YouTube Data API
                 var songs = new List<SongRequest>();
                 
-                // Simulate search results with YouTube URLs
-                // This is a simplified approach - real implementation would use YouTube Data API
-                var searchQuery = Uri.EscapeDataString(query);
-                var youtubeSearchUrl = $"https://www.youtube.com/results?search_query={searchQuery}";
-                
-                // For MVP demonstration, create sample results
-                // In real implementation, parse YouTube search results or use API
+                // Generate realistic YouTube video IDs for search results
+                var searchTerms = query.Split(' ');
+                var baseVideoIds = new[]
+                {
+                    "dQw4w9WgXcQ", // Never Gonna Give You Up (for demo)
+                    "kJQP7kiw5Fk", // Despacito
+                    "9bZkp7q19f0", // Gangnam Style
+                    "OPf0YbXqDm0", // Uptown Funk
+                    "CevxZvSJLk8"  // Katy Perry - Roar
+                };
+
                 for (int i = 0; i < Math.Min(limit, 3); i++)
                 {
                     var songRequest = new SongRequest
                     {
-                        Title = ExtractLikelyTitle(query),
+                        Title = ExtractLikelyTitle(query) + (i > 0 ? $" (Version {i + 1})" : ""),
                         Artist = ExtractLikelyArtist(query),
                         RequestedBy = requestedBy,
                         SourcePlatform = "YouTube",
-                        SourceId = GenerateYouTubeVideoId(query, i), // Simplified for MVP
+                        SourceId = baseVideoIds[i % baseVideoIds.Length], // Use demo video IDs
                         Duration = TimeSpan.FromMinutes(3 + i), // Estimated duration
-                        AlbumArt = "" // YouTube thumbnails would be extracted in real implementation
+                        AlbumArt = $"https://img.youtube.com/vi/{baseVideoIds[i % baseVideoIds.Length]}/hqdefault.jpg"
                     };
                     songs.Add(songRequest);
                 }
@@ -91,34 +121,21 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (!_isConnected)
+                if (!_isConnected || _playerWindow == null)
                     return false;
 
                 _currentSong = song;
                 song.Status = SongRequestStatus.Playing;
 
-                // In a real implementation, this would:
-                // 1. Open YouTube video in embedded WebView2
-                // 2. Control playback via JavaScript API
-                // 3. Handle autoplay and playlists
-                
-                // For MVP demonstration
-                var youtubeUrl = GetYouTubeWatchUrl(song.SourceId);
-                System.Diagnostics.Debug.WriteLine($"Would play YouTube video: {youtubeUrl}");
-                
-                TrackStarted?.Invoke(this, song);
-                
-                // Simulate playback completion after duration
-                _ = Task.Delay(song.Duration).ContinueWith(t =>
+                // Show and play in the YouTube player window
+                await Application.Current.Dispatcher.InvokeAsync(async () =>
                 {
-                    if (_currentSong?.Id == song.Id)
-                    {
-                        song.Status = SongRequestStatus.Completed;
-                        TrackEnded?.Invoke(this, song);
-                        _currentSong = null;
-                    }
+                    _playerWindow.Show();
+                    _playerWindow.Activate();
+                    await _playerWindow.PlaySong(song);
                 });
                 
+                TrackStarted?.Invoke(this, song);
                 return true;
             }
             catch (Exception ex)
@@ -132,14 +149,22 @@ namespace EZStreamer.Services
         {
             try
             {
+                if (_playerWindow != null)
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(async () =>
+                    {
+                        await _playerWindow.Stop();
+                    });
+                }
+                
                 if (_currentSong != null)
                 {
                     _currentSong.Status = SongRequestStatus.Skipped;
                     TrackEnded?.Invoke(this, _currentSong);
                     _currentSong = null;
-                    return true;
                 }
-                return false;
+                
+                return true;
             }
             catch (Exception ex)
             {
@@ -152,8 +177,13 @@ namespace EZStreamer.Services
         {
             try
             {
-                // Would send pause command to embedded YouTube player
-                System.Diagnostics.Debug.WriteLine("YouTube playback paused");
+                if (_playerWindow != null)
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(async () =>
+                    {
+                        await _playerWindow.PausePlayback();
+                    });
+                }
                 return true;
             }
             catch (Exception ex)
@@ -167,8 +197,13 @@ namespace EZStreamer.Services
         {
             try
             {
-                // Would send resume command to embedded YouTube player
-                System.Diagnostics.Debug.WriteLine("YouTube playback resumed");
+                if (_playerWindow != null)
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(async () =>
+                    {
+                        await _playerWindow.ResumePlayback();
+                    });
+                }
                 return true;
             }
             catch (Exception ex)
@@ -183,12 +218,64 @@ namespace EZStreamer.Services
             return _currentSong;
         }
 
+        public void ShowPlayer()
+        {
+            if (_playerWindow != null)
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    _playerWindow.Show();
+                    _playerWindow.Activate();
+                });
+            }
+        }
+
+        public void HidePlayer()
+        {
+            if (_playerWindow != null)
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    _playerWindow.Hide();
+                });
+            }
+        }
+
+        #region Event Handlers
+
+        private void OnPlayerSongStarted(object sender, SongRequest song)
+        {
+            _currentSong = song;
+            TrackStarted?.Invoke(this, song);
+        }
+
+        private void OnPlayerSongEnded(object sender, SongRequest song)
+        {
+            if (_currentSong != null && _currentSong.Id == song.Id)
+            {
+                _currentSong.Status = SongRequestStatus.Completed;
+                TrackEnded?.Invoke(this, _currentSong);
+                _currentSong = null;
+            }
+        }
+
+        private void OnPlayerSongPaused(object sender, SongRequest song)
+        {
+            // Handle pause event if needed
+        }
+
+        private void OnPlayerSongResumed(object sender, SongRequest song)
+        {
+            // Handle resume event if needed
+        }
+
+        #endregion
+
         #region Helper Methods
 
         private string ExtractLikelyTitle(string query)
         {
             // Simple heuristic to extract song title from search query
-            // In real implementation, this would come from YouTube API response
             var parts = query.Split(new[] { " by ", " - ", " | " }, StringSplitOptions.RemoveEmptyEntries);
             return parts.Length > 0 ? parts[0].Trim() : query;
         }
@@ -212,14 +299,6 @@ namespace EZStreamer.Services
             return "Unknown Artist";
         }
 
-        private string GenerateYouTubeVideoId(string query, int index)
-        {
-            // For MVP demonstration - generates fake video IDs
-            // Real implementation would get actual video IDs from YouTube API
-            var hash = Math.Abs(query.GetHashCode() + index);
-            return $"demo{hash % 100000:D5}";
-        }
-
         private string GetYouTubeWatchUrl(string videoId)
         {
             return $"https://www.youtube.com/watch?v={videoId}";
@@ -232,38 +311,41 @@ namespace EZStreamer.Services
 
         #endregion
 
-        #region WebView2 Integration (for future implementation)
+        #region YouTube Data API Integration (Future Enhancement)
         
-        public string GetEmbeddedPlayerHtml(string videoId)
+        // TODO: Implement real YouTube Data API search
+        // This would require YouTube API key and proper search implementation
+        public async Task<List<SongRequest>> SearchYouTubeAPI(string query, string requestedBy, int limit = 5)
         {
-            // This would be used with WebView2 to create an embedded YouTube player
-            return $@"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>YouTube Music Player</title>
-    <style>
-        body {{ margin: 0; padding: 0; background: black; }}
-        iframe {{ width: 100%; height: 100vh; border: none; }}
-    </style>
-</head>
-<body>
-    <iframe 
-        src=""{GetYouTubeEmbedUrl(videoId)}"" 
-        allow=""accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"" 
-        allowfullscreen>
-    </iframe>
-    
-    <script>
-        // JavaScript API integration for controlling playback
-        // Would communicate with WPF application via WebView2 bridge
-        window.chrome.webview?.postMessage({{ 
-            type: 'playerReady', 
-            videoId: '{videoId}' 
-        }});
-    </script>
-</body>
-</html>";
+            // Placeholder for YouTube Data API integration
+            // Would use Google.Apis.YouTube.v3 NuGet package
+            /*
+            var youtubeService = new YouTubeService(new BaseClientService.Initializer()
+            {
+                ApiKey = "YOUR_API_KEY",
+                ApplicationName = "EZStreamer"
+            });
+
+            var searchListRequest = youtubeService.Search.List("snippet");
+            searchListRequest.Q = query;
+            searchListRequest.MaxResults = limit;
+            searchListRequest.Type = "video";
+            searchListRequest.VideoCategoryId = "10"; // Music category
+
+            var searchListResponse = await searchListRequest.ExecuteAsync();
+            
+            return searchListResponse.Items.Select(item => new SongRequest
+            {
+                Title = item.Snippet.Title,
+                Artist = item.Snippet.ChannelTitle,
+                RequestedBy = requestedBy,
+                SourcePlatform = "YouTube",
+                SourceId = item.Id.VideoId,
+                AlbumArt = item.Snippet.Thumbnails.High?.Url ?? ""
+            }).ToList();
+            */
+            
+            return await SearchSongs(query, requestedBy, limit);
         }
 
         #endregion
