@@ -214,11 +214,57 @@ namespace EZStreamer.Views
         {
             try
             {
-                var authWindow = new TwitchAuthWindow();
-                if (authWindow.ShowDialog() == true)
+                // First check if we have credentials
+                var clientId = _configService.GetTwitchClientId();
+                if (string.IsNullOrEmpty(clientId))
                 {
-                    MessageBox.Show("Twitch connection successful!", "Success",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("Please configure your Twitch Client ID first by expanding the 'Twitch API Credentials' section above.", 
+                        "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Show options for authentication
+                var result = MessageBox.Show(
+                    "Choose authentication method:\n\n" +
+                    "YES - Use web browser (may have issues)\n" +
+                    "NO - Enter token manually (recommended)\n" +
+                    "CANCEL - Cancel authentication",
+                    "Twitch Authentication Method",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Cancel)
+                    return;
+
+                if (result == MessageBoxResult.No)
+                {
+                    // Manual token entry
+                    var manualDialog = new ManualTokenDialog("Twitch");
+                    if (manualDialog.ShowDialog() == true)
+                    {
+                        // Save the token and test connection
+                        var settings = _settingsService.LoadSettings();
+                        settings.TwitchAccessToken = manualDialog.Token;
+                        _settingsService.SaveSettings(settings);
+                        
+                        MessageBox.Show("Twitch token saved successfully! Connection will be tested on next app restart.", 
+                            "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+                else
+                {
+                    // Web authentication
+                    var authWindow = new TwitchAuthWindow();
+                    if (authWindow.ShowDialog() == true)
+                    {
+                        // Save the token
+                        var settings = _settingsService.LoadSettings();
+                        settings.TwitchAccessToken = authWindow.AccessToken;
+                        _settingsService.SaveSettings(settings);
+                        
+                        MessageBox.Show("Twitch connection successful!", "Success",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                 }
             }
             catch (Exception ex)
@@ -232,11 +278,57 @@ namespace EZStreamer.Views
         {
             try
             {
-                var authWindow = new SpotifyAuthWindow();
-                if (authWindow.ShowDialog() == true)
+                // First check if we have credentials
+                var clientId = _configService.GetSpotifyClientId();
+                if (string.IsNullOrEmpty(clientId))
                 {
-                    MessageBox.Show("Spotify connection successful!", "Success",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("Please configure your Spotify Client ID first by expanding the 'Spotify API Credentials' section above.", 
+                        "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Show options for authentication
+                var result = MessageBox.Show(
+                    "Choose authentication method:\n\n" +
+                    "YES - Use web browser (may have issues)\n" +
+                    "NO - Enter token manually (recommended)\n" +
+                    "CANCEL - Cancel authentication",
+                    "Spotify Authentication Method",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Cancel)
+                    return;
+
+                if (result == MessageBoxResult.No)
+                {
+                    // Manual token entry
+                    var manualDialog = new ManualTokenDialog("Spotify");
+                    if (manualDialog.ShowDialog() == true)
+                    {
+                        // Save the token
+                        var settings = _settingsService.LoadSettings();
+                        settings.SpotifyAccessToken = manualDialog.Token;
+                        _settingsService.SaveSettings(settings);
+                        
+                        MessageBox.Show("Spotify token saved successfully! Connection will be tested on next app restart.", 
+                            "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+                else
+                {
+                    // Web authentication
+                    var authWindow = new SpotifyAuthWindow();
+                    if (authWindow.ShowDialog() == true)
+                    {
+                        // Save the token
+                        var settings = _settingsService.LoadSettings();
+                        settings.SpotifyAccessToken = authWindow.AccessToken;
+                        _settingsService.SaveSettings(settings);
+                        
+                        MessageBox.Show("Spotify connection successful!", "Success",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                 }
             }
             catch (Exception ex)
