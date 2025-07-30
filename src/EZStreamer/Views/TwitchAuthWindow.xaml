@@ -1,0 +1,89 @@
+<Window x:Class="EZStreamer.Views.TwitchAuthWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Connect to Twitch" 
+        Height="600" 
+        Width="500"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        Background="{DynamicResource MaterialDesignPaper}"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        FontFamily="{DynamicResource MaterialDesignFont}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <materialDesign:Card Grid.Row="0" Margin="16,16,16,8" Padding="16">
+            <StackPanel Orientation="Horizontal">
+                <materialDesign:PackIcon Kind="Twitch" 
+                                       Foreground="#9146FF" 
+                                       Width="32" 
+                                       Height="32" 
+                                       Margin="0,0,16,0"/>
+                <StackPanel>
+                    <TextBlock Text="Connect to Twitch" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock Text="Authorize EZStreamer to access your Twitch account" 
+                             Opacity="0.7" 
+                             FontSize="12"/>
+                </StackPanel>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <!-- WebView for OAuth -->
+        <materialDesign:Card Grid.Row="1" Margin="16,0,16,8" Padding="8">
+            <Grid>
+                <wv2:WebView2 x:Name="AuthWebView" 
+                             NavigationCompleted="AuthWebView_NavigationCompleted"
+                             CoreWebView2InitializationCompleted="AuthWebView_CoreWebView2InitializationCompleted"/>
+                
+                <!-- Loading indicator -->
+                <StackPanel x:Name="LoadingPanel" 
+                          HorizontalAlignment="Center" 
+                          VerticalAlignment="Center"
+                          Background="{DynamicResource MaterialDesignPaper}">
+                    <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}"
+                               Value="0"
+                               IsIndeterminate="True"
+                               Width="50"
+                               Height="50"
+                               Margin="0,0,0,16"/>
+                    <TextBlock Text="Loading Twitch authentication..." 
+                             HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </materialDesign:Card>
+
+        <!-- Footer -->
+        <materialDesign:Card Grid.Row="2" Margin="16,0,16,16" Padding="16">
+            <StackPanel>
+                <TextBlock Text="What permissions will EZStreamer request?" 
+                         FontWeight="Medium" 
+                         Margin="0,0,0,8"/>
+                <TextBlock Text="• Read your channel information" FontSize="12" Margin="0,2"/>
+                <TextBlock Text="• Read and respond to chat messages" FontSize="12" Margin="0,2"/>
+                <TextBlock Text="• Receive channel point redemption notifications" FontSize="12" Margin="0,2"/>
+                <TextBlock Text="• Update your stream title and category" FontSize="12" Margin="0,2"/>
+                
+                <StackPanel Orientation="Horizontal" 
+                          HorizontalAlignment="Right" 
+                          Margin="0,16,0,0">
+                    <Button Content="Cancel" 
+                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                          Margin="0,0,8,0"
+                          Click="CancelButton_Click"/>
+                    <Button x:Name="ManualTokenButton"
+                          Content="Enter Token Manually" 
+                          Style="{StaticResource MaterialDesignRaisedButton}"
+                          Click="ManualTokenButton_Click"/>
+                </StackPanel>
+            </StackPanel>
+        </materialDesign:Card>
+    </Grid>
+</Window>
