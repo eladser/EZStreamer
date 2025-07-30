@@ -20,7 +20,8 @@ namespace EZStreamer.Services
         public event EventHandler Connected;
         public event EventHandler Disconnected;
         public event EventHandler<SongRequest> TrackStarted;
-        public event EventHandler<SongRequest> TrackEnded;
+        // Fixed CS0067: Removed unused event
+        // public event EventHandler<SongRequest> TrackEnded;
 
         public SpotifyService()
         {

@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.ComponentModel;
 using Microsoft.Web.WebView2.Core;
 using EZStreamer.Models;
 
@@ -366,7 +367,7 @@ namespace EZStreamer.Views
             LoadingPanel.Visibility = Visibility.Collapsed;
         }
 
-        protected override void OnClosed(EventArgs e)
+        protected override void OnClosing(CancelEventArgs e)
         {
             // Don't actually close, just hide
             e.Cancel = true;
