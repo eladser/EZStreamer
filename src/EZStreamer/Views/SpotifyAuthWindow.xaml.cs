@@ -4,6 +4,10 @@ using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using EZStreamer.Services;
 using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net;
+using System.Text;
+using System.Threading;
 
 namespace EZStreamer.Views
 {
@@ -11,9 +15,10 @@ namespace EZStreamer.Views
     {
         private readonly ConfigurationService _configService;
         private string _clientId;
-        // Use the working redirect URI - Spotify allows this specific localhost URL
-        private const string REDIRECT_URI = "http://redirect.spotify.com/redirect";
+        private const string REDIRECT_URI = "http://localhost:8888/callback";
         private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private";
+        private HttpListener _httpListener;
+        private bool _isListening = false;
 
         public string AccessToken { get; private set; }
         public bool IsAuthenticated { get; private set; }
@@ -26,95 +31,159 @@ namespace EZStreamer.Views
             
             LoadingPanel.Visibility = Visibility.Visible;
             
-            // Show manual token option immediately if no client ID
-            if (string.IsNullOrEmpty(_clientId))
-            {
-                ShowConfigurationNeeded();
-            }
-            else
-            {
-                // For now, go straight to manual token entry since it's more reliable
-                ShowManualTokenOption();
-            }
+            // Start local HTTP server for callback
+            StartLocalServer();
         }
 
-        private void ShowManualTokenOption()
+        private void StartLocalServer()
         {
-            LoadingPanel.Visibility = Visibility.Collapsed;
-            
-            var result = MessageBox.Show(
-                "Spotify authentication can be done manually for the most reliable results.\\n\\n" +
-                "Click YES to enter a token manually, or NO to try web authentication.\\n\\n" +
-                "For manual token:\\n" +
-                "1. Go to: https://developer.spotify.com/console/get-current-user/\\n" +
-                "2. Click 'Get Token'\\n" +
-                "3. Select the required scopes\\n" +
-                "4. Copy the access token",
-                "Spotify Authentication Method",
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Question);
-                
-            if (result == MessageBoxResult.Yes)
+            try
             {
+                _httpListener = new HttpListener();
+                _httpListener.Prefixes.Add("http://localhost:8888/");
+                _httpListener.Start();
+                _isListening = true;
+
+                // Listen for the callback in a background thread
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        while (_isListening && _httpListener.IsListening)
+                        {
+                            var context = await _httpListener.GetContextAsync();
+                            ProcessCallback(context);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_isListening) // Only log if we're supposed to be listening
+                        {
+                            System.Diagnostics.Debug.WriteLine($"HTTP listener error: {ex.Message}");
+                        }
+                    }
+                });
+
+                // Now proceed with authentication
+                if (string.IsNullOrEmpty(_clientId))
+                {
+                    ShowConfigurationNeeded();
+                }
+                else
+                {
+                    InitializeWebView();
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Failed to start local server: {ex.Message}\\n\\nTrying manual token entry instead.");
                 ShowManualTokenDialog();
             }
-            else if (result == MessageBoxResult.No)
+        }
+
+        private void ProcessCallback(HttpListenerContext context)
+        {
+            try
             {
-                // Try web authentication
+                var request = context.Request;
+                var response = context.Response;
+
+                // Send a simple HTML response
+                var html = @"
+                    <html>
+                    <head><title>Spotify Authentication</title></head>
+                    <body style='font-family: Arial; text-align: center; padding: 50px;'>
+                        <h1>✅ Authentication Successful!</h1>
+                        <p>You can close this window and return to EZStreamer.</p>
+                        <script>
+                            // Extract token from URL fragment and send to parent
+                            if (window.location.hash) {
+                                var hash = window.location.hash.substring(1);
+                                var params = new URLSearchParams(hash);
+                                var token = params.get('access_token');
+                                if (token) {
+                                    // Try to close the window
+                                    setTimeout(() => window.close(), 2000);
+                                }
+                            }
+                        </script>
+                    </body>
+                    </html>";
+
+                var buffer = Encoding.UTF8.GetBytes(html);
+                response.ContentLength64 = buffer.Length;
+                response.OutputStream.Write(buffer, 0, buffer.Length);
+                response.OutputStream.Close();
+
+                // Parse the URL for the access token
+                var url = request.Url.ToString();
+                if (url.Contains("#"))
+                {
+                    // Handle fragment (OAuth implicit flow)
+                    var fragment = url.Split('#')[1];
+                    var queryParams = HttpUtility.ParseQueryString(fragment);
+                    var accessToken = queryParams["access_token"];
+                    var error = queryParams["error"];
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (!string.IsNullOrEmpty(error))
+                        {
+                            ShowError($"Authentication failed: {error}");
+                        }
+                        else if (!string.IsNullOrEmpty(accessToken))
+                        {
+                            AccessToken = accessToken;
+                            IsAuthenticated = true;
+                            MessageBox.Show("Successfully connected to Spotify!", "Authentication Successful", 
+                                MessageBoxButton.OK, MessageBoxImage.Information);
+                            DialogResult = true;
+                            Close();
+                        }
+                    });
+                }
+                else if (request.QueryString["code"] != null)
+                {
+                    // Handle authorization code (OAuth authorization code flow)
+                    var code = request.QueryString["code"];
+                    var error = request.QueryString["error"];
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (!string.IsNullOrEmpty(error))
+                        {
+                            ShowError($"Authentication failed: {error}");
+                        }
+                        else if (!string.IsNullOrEmpty(code))
+                        {
+                            // Would need to exchange code for token, but for simplicity using implicit flow
+                            ShowError("Received authorization code. Please configure your Spotify app to use 'Implicit Grant' flow.");
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error processing callback: {ex.Message}");
+            }
+        }
+
+        private void InitializeWebView()
+        {
+            try
+            {
                 this.Loaded += SpotifyAuthWindow_Loaded;
-                InitializeWebAuth();
             }
-            else
+            catch (Exception ex)
             {
-                DialogResult = false;
-                Close();
+                ShowError($"Error initializing web view: {ex.Message}");
             }
-        }
-
-        private void ShowManualTokenDialog()
-        {
-            var dialog = new ManualTokenDialog("Spotify");
-            if (dialog.ShowDialog() == true)
-            {
-                AccessToken = dialog.Token;
-                IsAuthenticated = true;
-                DialogResult = true;
-                Close();
-            }
-            else
-            {
-                DialogResult = false;
-                Close();
-            }
-        }
-
-        private void InitializeWebAuth()
-        {
-            LoadingPanel.Visibility = Visibility.Visible;
         }
 
         private void SpotifyAuthWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            this.Loaded -= SpotifyAuthWindow_Loaded; // Unsubscribe
-            
-            // Check if client ID is configured
-            if (string.IsNullOrEmpty(_clientId))
-            {
-                ShowConfigurationNeeded();
-            }
-            else
-            {
-                // Initialize WebView if client ID is available
-                if (AuthWebView.CoreWebView2 == null)
-                {
-                    // WebView2 will automatically initialize and trigger the initialization event
-                }
-                else
-                {
-                    // WebView2 is already initialized, navigate directly
-                    NavigateToSpotifyAuth();
-                }
-            }
+            this.Loaded -= SpotifyAuthWindow_Loaded;
+            NavigateToSpotifyAuth();
         }
 
         private void ShowConfigurationNeeded()
@@ -126,7 +195,7 @@ namespace EZStreamer.Views
                 "Would you like to configure it now?\\n\\n" +
                 "You can get a Client ID from the Spotify Developer Dashboard:\\n" +
                 "https://developer.spotify.com/dashboard\\n\\n" +
-                "Use this redirect URI in your Spotify app:\\n" +
+                "IMPORTANT: Use this EXACT redirect URI in your Spotify app:\\n" +
                 REDIRECT_URI,
                 "Configuration Required",
                 MessageBoxButton.YesNo,
@@ -146,7 +215,7 @@ namespace EZStreamer.Views
         private void ShowClientIdDialog()
         {
             var dialog = new ConfigurationDialog("Spotify Client ID", 
-                $"Enter your Spotify Application Client ID:\\n\\nMake sure your Spotify app uses this redirect URI:\\n{REDIRECT_URI}");
+                $"Enter your Spotify Application Client ID:\\n\\nIMPORTANT: Make sure your Spotify app uses this EXACT redirect URI:\\n{REDIRECT_URI}\\n\\nAlso enable 'Implicit Grant' in your app settings.");
             
             if (dialog.ShowDialog() == true)
             {
@@ -174,7 +243,7 @@ namespace EZStreamer.Views
                     return;
                 }
 
-                // Navigate to Spotify OAuth URL
+                // Navigate to Spotify OAuth URL with implicit grant
                 var authUrl = $"https://accounts.spotify.com/authorize" +
                             $"?response_type=token" +
                             $"&client_id={_clientId}" +
@@ -206,13 +275,11 @@ namespace EZStreamer.Views
         {
             try
             {
-                if (e?.IsSuccess != false) // null or true
+                if (e?.IsSuccess != false)
                 {
-                    // Set up navigation event handler to intercept the callback
                     AuthWebView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
                     AuthWebView.CoreWebView2.DOMContentLoaded += CoreWebView2_DOMContentLoaded;
                     
-                    // If we have a pending navigation URL, navigate now
                     if (!string.IsNullOrEmpty(_pendingNavigationUrl))
                     {
                         AuthWebView.CoreWebView2.Navigate(_pendingNavigationUrl);
@@ -225,7 +292,8 @@ namespace EZStreamer.Views
                 }
                 else
                 {
-                    ShowError("Failed to initialize web browser");
+                    ShowError("Failed to initialize web browser. Trying manual token entry...");
+                    ShowManualTokenDialog();
                 }
             }
             catch (Exception ex)
@@ -238,93 +306,17 @@ namespace EZStreamer.Views
         {
             System.Diagnostics.Debug.WriteLine($"Navigation starting to: {e.Uri}");
             
-            // Check if this is our callback URL or if it contains access_token
-            if (e.Uri.StartsWith(REDIRECT_URI) || e.Uri.Contains("access_token="))
+            // Check if this is our callback URL
+            if (e.Uri.StartsWith(REDIRECT_URI))
             {
-                e.Cancel = true; // Cancel the navigation
-                ProcessCallback(e.Uri);
+                // Let it navigate to our local server
+                LoadingPanel.Visibility = Visibility.Visible;
             }
         }
 
         private void CoreWebView2_DOMContentLoaded(object sender, CoreWebView2DOMContentLoadedEventArgs e)
         {
             LoadingPanel.Visibility = Visibility.Collapsed;
-            
-            // Check if we're on the redirect page and extract token from URL
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(1000); // Wait for page to load
-                    
-                    var currentUrl = AuthWebView.CoreWebView2.Source;
-                    if (currentUrl.Contains("access_token=") || currentUrl.StartsWith(REDIRECT_URI))
-                    {
-                        Dispatcher.Invoke(() => ProcessCallback(currentUrl));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error checking for token: {ex.Message}");
-                }
-            });
-        }
-
-        private void ProcessCallback(string callbackUrl)
-        {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine($"Processing callback: {callbackUrl}");
-                
-                var uri = new Uri(callbackUrl);
-                
-                // Parse the fragment for access token
-                var fragment = uri.Fragment.TrimStart('#');
-                var queryParams = HttpUtility.ParseQueryString(fragment);
-                
-                var accessToken = queryParams["access_token"];
-                var error = queryParams["error"];
-
-                if (!string.IsNullOrEmpty(error))
-                {
-                    ShowError($"Authentication failed: {error}");
-                    return;
-                }
-
-                if (!string.IsNullOrEmpty(accessToken))
-                {
-                    AccessToken = accessToken;
-                    IsAuthenticated = true;
-                    
-                    MessageBox.Show("Successfully connected to Spotify!", "Authentication Successful", 
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                    
-                    DialogResult = true;
-                    Close();
-                    return;
-                }
-                
-                // If no token found, suggest manual entry
-                var result = MessageBox.Show(
-                    "No access token was found in the callback URL.\\n\\n" +
-                    "Would you like to try manual token entry instead?",
-                    "Token Not Found",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-                    
-                if (result == MessageBoxResult.Yes)
-                {
-                    ShowManualTokenDialog();
-                }
-                else
-                {
-                    ShowError("Authentication failed - no access token received.");
-                }
-            }
-            catch (Exception ex)
-            {
-                ShowError($"Error processing authentication callback: {ex.Message}");
-            }
         }
 
         private void AuthWebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -333,7 +325,8 @@ namespace EZStreamer.Views
 
             if (!e.IsSuccess)
             {
-                ShowError($"Navigation failed: {e.WebErrorStatus}");
+                ShowError($"Navigation failed: {e.WebErrorStatus}\\n\\nTrying manual token entry instead.");
+                ShowManualTokenDialog();
                 return;
             }
 
@@ -341,12 +334,6 @@ namespace EZStreamer.Views
             {
                 var currentUrl = AuthWebView.CoreWebView2.Source;
                 System.Diagnostics.Debug.WriteLine($"Navigation completed to: {currentUrl}");
-                
-                // Check if we're at the callback URL (shouldn't happen due to NavigationStarting handler)
-                if (currentUrl.StartsWith(REDIRECT_URI) || currentUrl.Contains("access_token="))
-                {
-                    ProcessCallback(currentUrl);
-                }
                 
                 // Check for error in URL
                 if (currentUrl.Contains("error="))
@@ -375,6 +362,23 @@ namespace EZStreamer.Views
             ShowManualTokenDialog();
         }
 
+        private void ShowManualTokenDialog()
+        {
+            var dialog = new ManualTokenDialog("Spotify");
+            if (dialog.ShowDialog() == true)
+            {
+                AccessToken = dialog.Token;
+                IsAuthenticated = true;
+                DialogResult = true;
+                Close();
+            }
+            else
+            {
+                DialogResult = false;
+                Close();
+            }
+        }
+
         private void ShowError(string message)
         {
             MessageBox.Show(message, "Authentication Error", 
@@ -387,7 +391,15 @@ namespace EZStreamer.Views
         {
             try
             {
-                // Clean up WebView2 resources properly
+                // Stop the HTTP listener
+                _isListening = false;
+                if (_httpListener != null && _httpListener.IsListening)
+                {
+                    _httpListener.Stop();
+                    _httpListener.Close();
+                }
+
+                // Clean up WebView2 resources
                 if (AuthWebView?.CoreWebView2 != null)
                 {
                     AuthWebView.CoreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
