@@ -1,5 +1,7 @@
 using System;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
 using TwitchLib.Client;
 using TwitchLib.Client.Events;
 using TwitchLib.Client.Models;
@@ -91,7 +93,7 @@ namespace EZStreamer.Services
                 _pubSub.Connect();
 
                 // Listen to channel points (need broadcaster ID)
-                var broadcaster = await _api.Helix.Users.GetUsersAsync(logins: new[] { _channelName });
+                var broadcaster = await _api.Helix.Users.GetUsersAsync(logins: new List<string> { _channelName });
                 if (broadcaster.Users.Length > 0)
                 {
                     _pubSub.ListenToChannelPoints(broadcaster.Users[0].Id);
@@ -136,7 +138,7 @@ namespace EZStreamer.Services
                     throw new Exception("Not connected to Twitch");
                 }
 
-                var broadcaster = await _api.Helix.Users.GetUsersAsync(logins: new[] { _channelName });
+                var broadcaster = await _api.Helix.Users.GetUsersAsync(logins: new List<string> { _channelName });
                 if (broadcaster.Users.Length == 0)
                 {
                     throw new Exception("Could not find broadcaster information");
@@ -148,7 +150,7 @@ namespace EZStreamer.Services
                 string categoryId = null;
                 if (!string.IsNullOrEmpty(categoryName))
                 {
-                    var categories = await _api.Helix.Games.GetGamesAsync(gameNames: new[] { categoryName });
+                    var categories = await _api.Helix.Games.GetGamesAsync(gameNames: new List<string> { categoryName });
                     if (categories.Games.Length > 0)
                     {
                         categoryId = categories.Games[0].Id;
