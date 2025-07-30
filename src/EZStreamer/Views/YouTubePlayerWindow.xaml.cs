@@ -83,7 +83,7 @@ namespace EZStreamer.Views
                 // Load the video in the YouTube player
                 var videoId = ExtractVideoId(song.SourceId);
                 // Fixed CS4008: Properly await the ExecuteScript call
-                await ExecuteScriptAsync($"loadVideo('{videoId}')");
+                await ExecuteScript($"loadVideo('{videoId}')");
                 
                 _isPlaying = true;
                 UpdatePlayPauseButton();
@@ -101,7 +101,7 @@ namespace EZStreamer.Views
         {
             try
             {
-                await ExecuteScriptAsync("pauseVideo()");
+                await ExecuteScript("pauseVideo()");
                 _isPlaying = false;
                 UpdatePlayPauseButton();
                 StatusText.Text = "Paused";
@@ -121,7 +121,7 @@ namespace EZStreamer.Views
         {
             try
             {
-                await ExecuteScriptAsync("playVideo()");
+                await ExecuteScript("playVideo()");
                 _isPlaying = true;
                 UpdatePlayPauseButton();
                 StatusText.Text = "Playing";
@@ -141,7 +141,7 @@ namespace EZStreamer.Views
         {
             try
             {
-                await ExecuteScriptAsync("stopVideo()");
+                await ExecuteScript("stopVideo()");
                 _isPlaying = false;
                 UpdatePlayPauseButton();
                 StatusText.Text = "Stopped";
@@ -159,8 +159,8 @@ namespace EZStreamer.Views
             }
         }
 
-        // Fixed CS4008: Made ExecuteScript properly async
-        private async Task ExecuteScriptAsync(string script)
+        // Fixed CS4008: Made ExecuteScript properly async and returning Task
+        private async Task ExecuteScript(string script)
         {
             if (_isInitialized && YouTubeWebView.CoreWebView2 != null)
             {

@@ -20,7 +20,7 @@ namespace EZStreamer.Services
         public event EventHandler Connected;
         public event EventHandler Disconnected;
         public event EventHandler<SongRequest> TrackStarted;
-        public event EventHandler<SongRequest> TrackEnded; // Re-added to fix SongRequestService
+        public event EventHandler<SongRequest> TrackEnded; // Keep this to satisfy SongRequestService dependency
 
         public SpotifyService()
         {
@@ -287,6 +287,12 @@ namespace EZStreamer.Services
                 System.Diagnostics.Debug.WriteLine($"Error getting current song info: {ex.Message}");
                 return null;
             }
+        }
+
+        // Method to trigger TrackEnded event when needed by SongRequestService
+        public void TriggerTrackEnded(SongRequest song)
+        {
+            TrackEnded?.Invoke(this, song);
         }
 
         public void Dispose()
