@@ -119,13 +119,13 @@ namespace EZStreamer.Services
                     return false;
 
                 // Get current scene to find the source
-                var currentScene = await Task.Run(() => _obs.GetCurrentProgramScene());
-                if (currentScene == null)
+                var currentSceneName = await GetCurrentSceneName();
+                if (string.IsNullOrEmpty(currentSceneName))
                     return false;
 
                 // Toggle or set source visibility
                 var sourceVisible = visible ?? !await IsSourceVisible(sourceName);
-                await Task.Run(() => _obs.SetSceneItemEnabled(currentScene.CurrentProgramSceneName, sourceName, sourceVisible));
+                await Task.Run(() => _obs.SetSceneItemEnabled(currentSceneName, sourceName, sourceVisible));
                 
                 return true;
             }
@@ -143,8 +143,8 @@ namespace EZStreamer.Services
                 if (!_isConnected)
                     return false;
 
-                var currentScene = await Task.Run(() => _obs.GetCurrentProgramScene());
-                if (currentScene?.Scenes == null)
+                var scenes = await GetScenes();
+                if (scenes == null)
                     return false;
 
                 // Look for the source in the current scene
@@ -218,8 +218,27 @@ namespace EZStreamer.Services
                 if (!_isConnected)
                     return string.Empty;
 
-                var scene = await Task.Run(() => _obs.GetCurrentProgramScene());
-                return scene?.CurrentProgramSceneName ?? string.Empty;
+                // Fixed: Get the scene response properly and extract the scene name
+                var sceneResponse = await Task.Run(() => _obs.GetCurrentProgramScene());
+                
+                // The response should be a proper object, not a string
+                // We need to handle this based on the actual OBS WebSocket library response type
+                if (sceneResponse != null)
+                {
+                    // If sceneResponse has a CurrentProgramSceneName property, use it
+                    var sceneType = sceneResponse.GetType();
+                    var sceneNameProperty = sceneType.GetProperty("CurrentProgramSceneName") ?? 
+                                          sceneType.GetProperty("SceneName") ?? 
+                                          sceneType.GetProperty("Name");
+                    
+                    if (sceneNameProperty != null)
+                    {
+                        var sceneName = sceneNameProperty.GetValue(sceneResponse);
+                        return sceneName?.ToString() ?? string.Empty;
+                    }
+                }
+                
+                return string.Empty;
             }
             catch (Exception ex)
             {
