@@ -77,7 +77,8 @@ namespace EZStreamer.Views
             }
         }
 
-        private async void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
+        // Fixed CS1998: Removed async since no await is used
+        private void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
         {
             try
             {

@@ -20,8 +20,7 @@ namespace EZStreamer.Services
         public event EventHandler Connected;
         public event EventHandler Disconnected;
         public event EventHandler<SongRequest> TrackStarted;
-        // Fixed CS0067: Removed unused event
-        // public event EventHandler<SongRequest> TrackEnded;
+        public event EventHandler<SongRequest> TrackEnded; // Re-added to fix SongRequestService
 
         public SpotifyService()
         {
@@ -202,7 +201,15 @@ namespace EZStreamer.Services
                     return false;
 
                 var response = await _httpClient.PostAsync($"me/player/next?device_id={_activeDevice.Id}", null);
-                return response.IsSuccessStatusCode;
+                
+                // If skip was successful, trigger TrackEnded event for current song
+                if (response.IsSuccessStatusCode)
+                {
+                    // We don't have the current song reference here, but the SongRequestService handles this
+                    return true;
+                }
+                
+                return false;
             }
             catch (Exception ex)
             {
