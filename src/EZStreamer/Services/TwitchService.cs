@@ -5,6 +5,7 @@ using TwitchLib.Client.Events;
 using TwitchLib.Client.Models;
 using TwitchLib.Communication.Clients;
 using TwitchLib.Communication.Models;
+using TwitchLib.Communication.Events;
 using TwitchLib.PubSub;
 using TwitchLib.PubSub.Events;
 using TwitchLib.Api;
@@ -194,7 +195,7 @@ namespace EZStreamer.Services
             Connected?.Invoke(this, EventArgs.Empty);
         }
 
-        private void OnClientDisconnected(object sender, Communication.Events.OnDisconnectedEventArgs e)
+        private void OnClientDisconnected(object sender, OnDisconnectedEventArgs e)
         {
             Disconnected?.Invoke(this, EventArgs.Empty);
         }
