@@ -291,7 +291,7 @@
                                 </Grid>
                                 
                                 <!-- Spotify Connection -->
-                                <Grid>
+                                <Grid Margin="0,0,0,16">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
@@ -306,6 +306,55 @@
                                           Style="{StaticResource MaterialDesignRaisedButton}"
                                           Click="ConnectSpotify_Click"/>
                                 </Grid>
+                                
+                                <!-- YouTube Connection -->
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <Ellipse Grid.Column="0" x:Name="YouTubeStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
+                                    <TextBlock Grid.Column="1" Text="YouTube Music" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="2" 
+                                          x:Name="YouTubeConnectButton"
+                                          Content="Connect" 
+                                          Style="{StaticResource MaterialDesignRaisedButton}"
+                                          Click="ConnectYouTube_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- Music Settings -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Music Settings" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="Preferred Music Source:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,12,0"/>
+                                    <ComboBox x:Name="PreferredMusicSourceComboBox" 
+                                            Width="150"
+                                            SelectionChanged="PreferredMusicSource_Changed">
+                                        <ComboBoxItem Content="Spotify" Tag="Spotify"/>
+                                        <ComboBoxItem Content="YouTube Music" Tag="YouTube"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                
+                                <CheckBox x:Name="AutoPlayNextSongCheckBox" 
+                                        Content="Automatically play next song in queue" 
+                                        IsChecked="True"
+                                        Margin="0,0,0,8"/>
+                                        
+                                <CheckBox x:Name="ShowYouTubePlayerCheckBox" 
+                                        Content="Show YouTube player window when playing YouTube songs" 
+                                        IsChecked="True"
+                                        Margin="0,0,0,8"/>
                             </StackPanel>
                         </materialDesign:Card>
 
@@ -327,13 +376,217 @@
                                         IsChecked="True"
                                         Margin="0,0,0,8"/>
                                 
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+                                    <TextBlock Text="Chat command:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox x:Name="ChatCommandTextBox" 
+                                           Text="!songrequest" 
+                                           Width="120"/>
+                                </StackPanel>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <TextBlock Text="Max queue length:" 
                                              VerticalAlignment="Center" 
                                              Margin="0,0,8,0"/>
                                     <TextBox x:Name="MaxQueueLengthTextBox" 
                                            Text="10" 
                                            Width="60"/>
+                                </StackPanel>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Request cooldown (seconds):" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox x:Name="RequestCooldownTextBox" 
+                                           Text="0" 
+                                           Width="60"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- OBS Integration -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                    <TextBlock Text="OBS Integration" 
+                                             FontSize="18" 
+                                             FontWeight="Medium"
+                                             VerticalAlignment="Center"/>
+                                    <Ellipse x:Name="OBSStatusIndicator" 
+                                           Style="{StaticResource DisconnectedStatus}"
+                                           Margin="12,0,8,0"/>
+                                    <TextBlock x:Name="OBSStatusText" 
+                                             Text="Disconnected" 
+                                             VerticalAlignment="Center"
+                                             Opacity="0.7"/>
+                                </StackPanel>
+                                
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="60"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <TextBlock Grid.Column="0" 
+                                             Text="Server:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox Grid.Column="1" 
+                                           x:Name="OBSServerTextBox"
+                                           Text="localhost"
+                                           Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="2" 
+                                             Text="Port:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox Grid.Column="3" 
+                                           x:Name="OBSPortTextBox"
+                                           Text="4455"/>
+                                </Grid>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="Password:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <PasswordBox x:Name="OBSPasswordBox" 
+                                               Width="200"/>
+                                </StackPanel>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <Button x:Name="OBSConnectButton"
+                                          Content="Connect to OBS" 
+                                          Style="{StaticResource MaterialDesignRaisedButton}"
+                                          Click="ConnectOBS_Click"
+                                          Margin="0,0,8,0"/>
+                                    <Button Content="Test Connection" 
+                                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                                          Click="TestOBSConnection_Click"/>
+                                </StackPanel>
+                                
+                                <CheckBox x:Name="OBSAutoConnectCheckBox" 
+                                        Content="Auto-connect to OBS on startup" 
+                                        Margin="0,0,0,8"/>
+                                        
+                                <CheckBox x:Name="OBSSceneSwitchingCheckBox" 
+                                        Content="Enable automatic scene switching" 
+                                        Margin="0,0,0,8"/>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- Overlay Settings -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Overlay Settings" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="Overlay Theme:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,12,0"/>
+                                    <ComboBox x:Name="OverlayThemeComboBox" 
+                                            Width="150"
+                                            SelectionChanged="OverlayTheme_Changed">
+                                        <ComboBoxItem Content="Default" Tag="Default"/>
+                                        <ComboBoxItem Content="Minimal" Tag="Minimal"/>
+                                        <ComboBoxItem Content="Neon" Tag="Neon"/>
+                                        <ComboBoxItem Content="Classic" Tag="Classic"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                
+                                <CheckBox x:Name="OverlayShowAlbumArtCheckBox" 
+                                        Content="Show album art in overlay" 
+                                        IsChecked="True"
+                                        Margin="0,0,0,8"/>
+                                        
+                                <CheckBox x:Name="OverlayShowRequesterCheckBox" 
+                                        Content="Show requester name in overlay" 
+                                        IsChecked="True"
+                                        Margin="0,0,0,8"/>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+                                    <TextBlock Text="Display duration (0 = always show):" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox x:Name="OverlayDurationTextBox" 
+                                           Text="0" 
+                                           Width="60"/>
+                                    <TextBlock Text="seconds" 
+                                             VerticalAlignment="Center" 
+                                             Margin="8,0,0,0"/>
+                                </StackPanel>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <Button Content="Preview Overlay" 
+                                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                                          Click="PreviewOverlay_Click"
+                                          Margin="0,0,8,0"/>
+                                    <Button Content="Open Overlay Folder" 
+                                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                                          Click="OpenOverlayFolder_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- Advanced Settings -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Advanced Settings" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <CheckBox x:Name="AllowExplicitContentCheckBox" 
+                                        Content="Allow explicit content in song requests" 
+                                        IsChecked="True"
+                                        Margin="0,0,0,8"/>
+                                        
+                                <CheckBox x:Name="RequireFollowersOnlyCheckBox" 
+                                        Content="Require requesters to be followers" 
+                                        Margin="0,0,0,8"/>
+                                        
+                                <CheckBox x:Name="RequireSubscribersOnlyCheckBox" 
+                                        Content="Require requesters to be subscribers" 
+                                        Margin="0,0,0,8"/>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+                                    <TextBlock Text="Min song duration:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox x:Name="MinDurationTextBox" 
+                                           Text="30" 
+                                           Width="60"/>
+                                    <TextBlock Text="seconds" 
+                                             VerticalAlignment="Center" 
+                                             Margin="8,0,16,0"/>
+                                             
+                                    <TextBlock Text="Max duration:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox x:Name="MaxDurationTextBox" 
+                                           Text="600" 
+                                           Width="60"/>
+                                    <TextBlock Text="seconds" 
+                                             VerticalAlignment="Center" 
+                                             Margin="8,0,0,0"/>
+                                </StackPanel>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                    <Button Content="Reset to Defaults" 
+                                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                                          Click="ResetSettings_Click"
+                                          Margin="0,0,8,0"/>
+                                    <Button Content="Export Settings" 
+                                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                                          Click="ExportSettings_Click"
+                                          Margin="0,0,8,0"/>
+                                    <Button Content="Import Settings" 
+                                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                                          Click="ImportSettings_Click"/>
                                 </StackPanel>
                             </StackPanel>
                         </materialDesign:Card>
