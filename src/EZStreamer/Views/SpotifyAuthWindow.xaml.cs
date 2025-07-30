@@ -10,7 +10,8 @@ namespace EZStreamer.Views
     {
         private readonly ConfigurationService _configService;
         private string _clientId;
-        private const string REDIRECT_URI = "http://localhost:3000/auth/spotify/callback";
+        // Updated to use HTTPS redirect URI as required by Spotify
+        private const string REDIRECT_URI = "https://eladser.github.io/ezstreamer/auth/spotify/callback";
         private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private";
 
         public string AccessToken { get; private set; }
@@ -57,10 +58,12 @@ namespace EZStreamer.Views
             LoadingPanel.Visibility = Visibility.Collapsed;
             
             var result = MessageBox.Show(
-                "Spotify Client ID is not configured.\n\n" +
-                "Would you like to configure it now?\n\n" +
-                "You can get a Client ID from the Spotify Developer Dashboard:\n" +
-                "https://developer.spotify.com/dashboard",
+                "Spotify Client ID is not configured.\\n\\n" +
+                "Would you like to configure it now?\\n\\n" +
+                "You can get a Client ID from the Spotify Developer Dashboard:\\n" +
+                "https://developer.spotify.com/dashboard\\n\\n" +
+                "IMPORTANT: Use this redirect URI in your Spotify app:\\n" +
+                REDIRECT_URI,
                 "Configuration Required",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
@@ -79,7 +82,7 @@ namespace EZStreamer.Views
         private void ShowClientIdDialog()
         {
             var dialog = new ConfigurationDialog("Spotify Client ID", 
-                "Enter your Spotify Application Client ID:");
+                $"Enter your Spotify Application Client ID:\\n\\nMake sure your Spotify app uses this redirect URI:\\n{REDIRECT_URI}");
             
             if (dialog.ShowDialog() == true)
             {
@@ -133,13 +136,15 @@ namespace EZStreamer.Views
 
         private string _pendingNavigationUrl;
 
-        // Fixed CS1998: Removed async since no await is used
         private void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
         {
             try
             {
                 if (e?.IsSuccess != false) // null or true
                 {
+                    // Set up navigation event handler to intercept the callback
+                    AuthWebView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
+                    
                     // If we have a pending navigation URL, navigate now
                     if (!string.IsNullOrEmpty(_pendingNavigationUrl))
                     {
@@ -162,47 +167,85 @@ namespace EZStreamer.Views
             }
         }
 
+        private void CoreWebView2_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine($"Navigation starting to: {e.Uri}");
+            
+            // Check if this is our callback URL
+            if (e.Uri.StartsWith(REDIRECT_URI))
+            {
+                e.Cancel = true; // Cancel the navigation
+                ProcessCallback(e.Uri);
+            }
+        }
+
+        private void ProcessCallback(string callbackUrl)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Processing callback: {callbackUrl}");
+                
+                var uri = new Uri(callbackUrl);
+                
+                // Parse the fragment for access token
+                var fragment = uri.Fragment.TrimStart('#');
+                var queryParams = HttpUtility.ParseQueryString(fragment);
+                
+                var accessToken = queryParams["access_token"];
+                var error = queryParams["error"];
+
+                if (!string.IsNullOrEmpty(error))
+                {
+                    ShowError($"Authentication failed: {error}");
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(accessToken))
+                {
+                    AccessToken = accessToken;
+                    IsAuthenticated = true;
+                    
+                    MessageBox.Show("Successfully connected to Spotify!", "Authentication Successful", 
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    
+                    DialogResult = true;
+                    Close();
+                    return;
+                }
+                
+                ShowError("No access token received from Spotify authentication.");
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Error processing authentication callback: {ex.Message}");
+            }
+        }
+
         private void AuthWebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             LoadingPanel.Visibility = Visibility.Collapsed;
 
+            if (!e.IsSuccess)
+            {
+                ShowError($"Navigation failed: {e.WebErrorStatus}");
+                return;
+            }
+
             try
             {
-                var uri = new Uri(AuthWebView.CoreWebView2.Source);
+                var currentUrl = AuthWebView.CoreWebView2.Source;
+                System.Diagnostics.Debug.WriteLine($"Navigation completed to: {currentUrl}");
                 
-                // Check if this is the callback URL with access token
-                if (uri.Host == "localhost" && uri.LocalPath == "/auth/spotify/callback")
+                // Check if we're at the callback URL (shouldn't happen due to NavigationStarting handler)
+                if (currentUrl.StartsWith(REDIRECT_URI))
                 {
-                    // Parse the fragment for access token
-                    var fragment = uri.Fragment.TrimStart('#');
-                    var queryParams = HttpUtility.ParseQueryString(fragment);
-                    
-                    var accessToken = queryParams["access_token"];
-                    var error = queryParams["error"];
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        ShowError($"Authentication failed: {error}");
-                        return;
-                    }
-
-                    if (!string.IsNullOrEmpty(accessToken))
-                    {
-                        AccessToken = accessToken;
-                        IsAuthenticated = true;
-                        
-                        MessageBox.Show("Successfully connected to Spotify!", "Authentication Successful", 
-                            MessageBoxButton.OK, MessageBoxImage.Information);
-                        
-                        DialogResult = true;
-                        Close();
-                        return;
-                    }
+                    ProcessCallback(currentUrl);
                 }
-
+                
                 // Check for error in URL
-                if (uri.Query.Contains("error="))
+                if (currentUrl.Contains("error="))
                 {
+                    var uri = new Uri(currentUrl);
                     var queryParams = HttpUtility.ParseQueryString(uri.Query);
                     var error = queryParams["error"];
                     
@@ -246,11 +289,12 @@ namespace EZStreamer.Views
             try
             {
                 // Clean up WebView2 resources properly
-                if (AuthWebView != null)
+                if (AuthWebView?.CoreWebView2 != null)
                 {
-                    // Dispose the WebView2 control which will clean up the CoreWebView2
-                    AuthWebView.Dispose();
+                    AuthWebView.CoreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
                 }
+                
+                AuthWebView?.Dispose();
             }
             catch
             {
