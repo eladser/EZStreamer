@@ -18,7 +18,7 @@
     <PackageReference Include="MaterialDesignThemes" Version="4.9.0" />
     <PackageReference Include="MaterialDesignColors" Version="2.1.4" />
     <PackageReference Include="TwitchLib" Version="3.5.3" />
-    <PackageReference Include="SpotifyAPI.Web" Version="7.0.2" />
+    <PackageReference Include="SpotifyAPI.Web" Version="7.1.1" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2045.28" />
     <PackageReference Include="obs-websocket-dotnet" Version="5.0.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
