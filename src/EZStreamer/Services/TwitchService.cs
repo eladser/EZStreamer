@@ -158,10 +158,11 @@ namespace EZStreamer.Services
                 }
 
                 // Update channel information
+                // Fixed: Using correct parameter name 'Title' instead of 'title'
                 await _api.Helix.Channels.ModifyChannelInformationAsync(
                     broadcasterId: broadcasterId,
-                    title: title,
-                    gameId: categoryId);
+                    Title: title,
+                    GameId: categoryId);
             }
             catch (Exception ex)
             {
