@@ -701,16 +701,77 @@ namespace EZStreamer.Views
 
         protected override void OnClosed(EventArgs e)
         {
-            // Save settings before closing
-            SaveCurrentSettings();
-            
-            // Disconnect services
-            _twitchService?.Disconnect();
-            _spotifyService?.Disconnect();
-            _youtubeMusicService?.Disconnect();
-            _obsService?.Dispose();
-            
+            // Force proper cleanup before closing
+            PerformCleanup();
             base.OnClosed(e);
+        }
+
+        private void PerformCleanup()
+        {
+            try
+            {
+                // Save settings before closing
+                SaveCurrentSettings();
+                
+                // Disconnect and dispose services properly
+                _twitchService?.Disconnect();
+                _spotifyService?.Disconnect();
+                
+                // Force close YouTube player window if it exists
+                if (_youtubeMusicService?.IsConnected == true)
+                {
+                    // Get the player window and force close it
+                    var youtubeService = _youtubeMusicService as YouTubeMusicService;
+                    if (youtubeService != null)
+                    {
+                        try
+                        {
+                            // Use reflection to access the private _playerWindow field
+                            var playerWindowField = youtubeService.GetType().GetField("_playerWindow", 
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            
+                            if (playerWindowField?.GetValue(youtubeService) is YouTubePlayerWindow playerWindow)
+                            {
+                                Application.Current.Dispatcher.Invoke(() =>
+                                {
+                                    playerWindow.ForceClose();
+                                });
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore reflection errors, just disconnect normally
+                        }
+                    }
+                    
+                    _youtubeMusicService.Disconnect();
+                }
+                
+                // Disconnect OBS with timeout
+                if (_obsService?.IsConnected == true)
+                {
+                    var disconnectTask = _obsService.DisconnectAsync();
+                    
+                    // Wait up to 2 seconds for graceful disconnect
+                    if (!disconnectTask.Wait(2000))
+                    {
+                        System.Diagnostics.Debug.WriteLine("OBS disconnect timed out");
+                    }
+                }
+                
+                // Dispose OBS service
+                _obsService?.Dispose();
+                
+                // Force garbage collection to clean up any WebView2 processes
+                System.GC.Collect();
+                System.GC.WaitForPendingFinalizers();
+                System.GC.Collect();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error during cleanup: {ex.Message}");
+                // Don't throw exceptions during cleanup as it might prevent shutdown
+            }
         }
     }
 }
