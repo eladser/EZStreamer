@@ -24,6 +24,14 @@ namespace EZStreamer.Views
             
             LoadingPanel.Visibility = Visibility.Visible;
             
+            // Defer client ID check until after window is shown
+            this.Loaded += TwitchAuthWindow_Loaded;
+        }
+
+        private void TwitchAuthWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            this.Loaded -= TwitchAuthWindow_Loaded; // Unsubscribe
+            
             // Check if client ID is configured
             if (string.IsNullOrEmpty(_clientId))
             {
