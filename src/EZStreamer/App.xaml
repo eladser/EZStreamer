@@ -1,0 +1,50 @@
+<Application x:Class="EZStreamer.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             StartupUri="Views/MainWindow.xaml">
+    
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Material Design -->
+                <materialDesign:BundledTheme BaseTheme="Dark" 
+                                           PrimaryColor="Purple" 
+                                           SecondaryColor="DeepPurple" />
+                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Defaults.xaml" />
+                
+                <!-- Custom Styles -->
+                <ResourceDictionary>
+                    <!-- Custom card style for better spacing -->
+                    <Style x:Key="ContentCard" TargetType="materialDesign:Card">
+                        <Setter Property="Margin" Value="16" />
+                        <Setter Property="Padding" Value="16" />
+                    </Style>
+                    
+                    <!-- Tab header style -->
+                    <Style x:Key="TabHeaderStyle" TargetType="TextBlock">
+                        <Setter Property="FontSize" Value="14" />
+                        <Setter Property="FontWeight" Value="Medium" />
+                        <Setter Property="Margin" Value="8,4" />
+                    </Style>
+                    
+                    <!-- Status indicator styles -->
+                    <Style x:Key="ConnectedStatus" TargetType="Ellipse">
+                        <Setter Property="Width" Value="12" />
+                        <Setter Property="Height" Value="12" />
+                        <Setter Property="Fill" Value="#4CAF50" />
+                        <Setter Property="Margin" Value="0,0,8,0" />
+                    </Style>
+                    
+                    <Style x:Key="DisconnectedStatus" TargetType="Ellipse">
+                        <Setter Property="Width" Value="12" />
+                        <Setter Property="Height" Value="12" />
+                        <Setter Property="Fill" Value="#F44336" />
+                        <Setter Property="Margin" Value="0,0,8,0" />
+                    </Style>
+                </ResourceDictionary>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+    
+</Application>
