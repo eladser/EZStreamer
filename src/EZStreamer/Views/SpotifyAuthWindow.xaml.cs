@@ -2,12 +2,14 @@ using System;
 using System.Web;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
+using EZStreamer.Services;
 
 namespace EZStreamer.Views
 {
     public partial class SpotifyAuthWindow : Window
     {
-        private const string CLIENT_ID = "your_spotify_client_id"; // This should be configured
+        private readonly ConfigurationService _configService;
+        private string _clientId;
         private const string REDIRECT_URI = "http://localhost:3000/auth/spotify/callback";
         private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private";
 
@@ -17,19 +19,80 @@ namespace EZStreamer.Views
         public SpotifyAuthWindow()
         {
             InitializeComponent();
+            _configService = new ConfigurationService();
+            _clientId = _configService.GetSpotifyClientId();
+            
             LoadingPanel.Visibility = Visibility.Visible;
+            
+            // Check if client ID is configured
+            if (string.IsNullOrEmpty(_clientId))
+            {
+                ShowConfigurationNeeded();
+            }
+        }
+
+        private void ShowConfigurationNeeded()
+        {
+            LoadingPanel.Visibility = Visibility.Collapsed;
+            
+            var result = MessageBox.Show(
+                "Spotify Client ID is not configured.\n\n" +
+                "Would you like to configure it now?\n\n" +
+                "You can get a Client ID from the Spotify Developer Dashboard:\n" +
+                "https://developer.spotify.com/dashboard",
+                "Configuration Required",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+                
+            if (result == MessageBoxResult.Yes)
+            {
+                ShowClientIdDialog();
+            }
+            else
+            {
+                DialogResult = false;
+                Close();
+            }
+        }
+
+        private void ShowClientIdDialog()
+        {
+            var dialog = new ConfigurationDialog("Spotify Client ID", 
+                "Enter your Spotify Application Client ID:");
+            
+            if (dialog.ShowDialog() == true)
+            {
+                _clientId = dialog.Value;
+                _configService.SetSpotifyCredentials(_clientId);
+                
+                // Restart the authentication process
+                LoadingPanel.Visibility = Visibility.Visible;
+                AuthWebView_CoreWebView2InitializationCompleted(null, 
+                    new CoreWebView2InitializationCompletedEventArgs());
+            }
+            else
+            {
+                DialogResult = false;
+                Close();
+            }
         }
 
         private async void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
         {
             try
             {
-                if (e.IsSuccess)
+                if (string.IsNullOrEmpty(_clientId))
+                {
+                    ShowConfigurationNeeded();
+                    return;
+                }
+
+                if (e?.IsSuccess != false) // null or true
                 {
                     // Navigate to Spotify OAuth URL
                     var authUrl = $"https://accounts.spotify.com/authorize" +
                                 $"?response_type=token" +
-                                $"&client_id={CLIENT_ID}" +
+                                $"&client_id={_clientId}" +
                                 $"&scope={Uri.EscapeDataString(SCOPES)}" +
                                 $"&redirect_uri={Uri.EscapeDataString(REDIRECT_URI)}" +
                                 $"&show_dialog=true";
