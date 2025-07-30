@@ -58,50 +58,35 @@ namespace EZStreamer.Views
             UpdateStatusIndicators();
             UpdateQueueDisplay();
             
-            StatusText.Text = "Welcome to EZStreamer! Connect your accounts to get started.";
-            
-            // Check if this is first run
-            if (_configurationService.IsFirstRun())
-            {
-                ShowFirstRunMessage();
-            }
-        }
-
-        private void ShowFirstRunMessage()
-        {
-            MessageBox.Show(
-                "Welcome to EZStreamer!\n\n" +
-                "This appears to be your first time running the application. " +
-                "You'll need to configure your API credentials to get started.\n\n" +
-                "Go to the Settings tab to connect your Twitch and Spotify accounts.\n\n" +
-                "For now, you can test the functionality using the test controls in the Now Playing tab.",
-                "Welcome to EZStreamer",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            StatusText.Text = "EZStreamer ready! Add test songs or configure your accounts in Settings.";
         }
 
         private void LoadSettings()
         {
-            var settings = _settingsService.LoadSettings();
-            
-            // Try to connect services if tokens exist
-            if (!string.IsNullOrEmpty(settings.TwitchAccessToken))
+            try
             {
-                ConnectTwitchWithToken(settings.TwitchAccessToken);
+                var settings = _settingsService.LoadSettings();
+                
+                // Try to connect services if tokens exist and are valid
+                if (!string.IsNullOrEmpty(settings.TwitchAccessToken))
+                {
+                    Task.Run(() => ConnectTwitchWithToken(settings.TwitchAccessToken));
+                }
+                
+                if (!string.IsNullOrEmpty(settings.SpotifyAccessToken))
+                {
+                    Task.Run(() => ConnectSpotifyWithToken(settings.SpotifyAccessToken));
+                }
+                
+                // Auto-connect to OBS if enabled
+                if (settings.OBSAutoConnect)
+                {
+                    Task.Run(() => ConnectOBSWithSettings(settings));
+                }
             }
-            
-            if (!string.IsNullOrEmpty(settings.SpotifyAccessToken))
+            catch (Exception ex)
             {
-                ConnectSpotifyWithToken(settings.SpotifyAccessToken);
-            }
-            
-            // Connect YouTube Music (no token needed)
-            ConnectYouTube();
-            
-            // Auto-connect to OBS if enabled
-            if (settings.OBSAutoConnect)
-            {
-                ConnectOBSWithSettings(settings);
+                StatusText.Text = $"Error loading settings: {ex.Message}";
             }
         }
 
@@ -130,149 +115,283 @@ namespace EZStreamer.Views
 
         private void UpdateStatusIndicators()
         {
-            // Update Twitch status
-            var twitchConnected = _twitchService.IsConnected;
-            TwitchStatusIndicator.Style = twitchConnected ? 
-                (Style)FindResource("ConnectedStatus") : 
-                (Style)FindResource("DisconnectedStatus");
-            
-            // Update Spotify status
-            var spotifyConnected = _spotifyService.IsConnected;
-            SpotifyStatusIndicator.Style = spotifyConnected ? 
-                (Style)FindResource("ConnectedStatus") : 
-                (Style)FindResource("DisconnectedStatus");
+            try
+            {
+                // Update Twitch status
+                var twitchConnected = _twitchService?.IsConnected ?? false;
+                TwitchStatusIndicator.Style = twitchConnected ? 
+                    (Style)FindResource("ConnectedStatus") : 
+                    (Style)FindResource("DisconnectedStatus");
+                
+                // Update Spotify status
+                var spotifyConnected = _spotifyService?.IsConnected ?? false;
+                SpotifyStatusIndicator.Style = spotifyConnected ? 
+                    (Style)FindResource("ConnectedStatus") : 
+                    (Style)FindResource("DisconnectedStatus");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error updating status indicators: {ex.Message}");
+            }
         }
 
         private void UpdateQueueDisplay()
         {
-            var count = SongQueue.Count;
-            QueueCountText.Text = count == 0 ? "Empty" : 
-                                  count == 1 ? "1 song" : 
-                                  $"{count} songs";
-            
-            EmptyQueueMessage.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            try
+            {
+                var count = SongQueue?.Count ?? 0;
+                QueueCountText.Text = count == 0 ? "Empty" : 
+                                      count == 1 ? "1 song" : 
+                                      $"{count} songs";
+                
+                EmptyQueueMessage.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error updating queue display: {ex.Message}");
+            }
         }
 
         #region Event Handlers
 
         private void OnSongRequested(object sender, SongRequest request)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                SongQueue.Add(request);
-                RequestHistory.Insert(0, request);
-                StatusText.Text = $"Song requested by {request.RequestedBy}: {request.Title}";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    SongQueue.Add(request);
+                    RequestHistory.Insert(0, request);
+                    StatusText.Text = $"Song requested by {request.RequestedBy}: {request.Title}";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling song request: {ex.Message}");
+            }
         }
 
         private void OnSongStarted(object sender, SongRequest request)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                CurrentSongTitle.Text = request.Title;
-                CurrentSongArtist.Text = request.Artist;
-                RequestedBy.Text = $"Requested by {request.RequestedBy}";
-                
-                // Update overlay
-                _overlayService.UpdateNowPlaying(request);
-                
-                StatusText.Text = $"Now playing: {request.Title} by {request.Artist}";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    CurrentSongTitle.Text = request.Title;
+                    CurrentSongArtist.Text = request.Artist;
+                    RequestedBy.Text = $"Requested by {request.RequestedBy}";
+                    
+                    // Update request status
+                    request.Status = SongRequestStatus.Playing;
+                    
+                    // Update overlay
+                    try
+                    {
+                        _overlayService.UpdateNowPlaying(request);
+                    }
+                    catch (Exception overlayEx)
+                    {
+                        Debug.WriteLine($"Overlay update failed: {overlayEx.Message}");
+                    }
+                    
+                    StatusText.Text = $"Now playing: {request.Title} by {request.Artist}";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling song start: {ex.Message}");
+            }
         }
 
         private void OnSongCompleted(object sender, SongRequest request)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                if (SongQueue.Contains(request))
+                Dispatcher.Invoke(() =>
                 {
-                    SongQueue.Remove(request);
-                }
-            });
+                    request.Status = SongRequestStatus.Completed;
+                    if (SongQueue.Contains(request))
+                    {
+                        SongQueue.Remove(request);
+                    }
+                    
+                    // Auto-play next song if enabled
+                    var settings = _settingsService.LoadSettings();
+                    if (settings.AutoPlayNextSong && SongQueue.Count > 0)
+                    {
+                        var nextSong = SongQueue.First();
+                        Task.Run(() => PlaySong(nextSong));
+                    }
+                    else
+                    {
+                        // Clear current song display if queue is empty
+                        if (SongQueue.Count == 0)
+                        {
+                            CurrentSongTitle.Text = "No song playing";
+                            CurrentSongArtist.Text = "Add songs to queue or connect to Twitch";
+                            RequestedBy.Text = "";
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling song completion: {ex.Message}");
+            }
         }
 
         private void OnSongRequestError(object sender, string error)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                StatusText.Text = $"Error: {error}";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = $"Error: {error}";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling song request error: {ex.Message}");
+            }
         }
 
         private void OnTwitchConnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                UpdateStatusIndicators();
-                StatusText.Text = "Connected to Twitch! You can now receive song requests.";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    UpdateStatusIndicators();
+                    StatusText.Text = "Connected to Twitch! You can now receive song requests.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling Twitch connection: {ex.Message}");
+            }
         }
 
         private void OnTwitchDisconnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                UpdateStatusIndicators();
-                StatusText.Text = "Disconnected from Twitch.";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    UpdateStatusIndicators();
+                    StatusText.Text = "Disconnected from Twitch.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling Twitch disconnection: {ex.Message}");
+            }
         }
 
         private void OnSpotifyConnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                UpdateStatusIndicators();
-                StatusText.Text = "Connected to Spotify! Songs can now be played automatically.";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    UpdateStatusIndicators();
+                    StatusText.Text = "Connected to Spotify! Songs can now be played automatically.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling Spotify connection: {ex.Message}");
+            }
         }
 
         private void OnSpotifyDisconnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                UpdateStatusIndicators();
-                StatusText.Text = "Disconnected from Spotify.";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    UpdateStatusIndicators();
+                    StatusText.Text = "Disconnected from Spotify.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling Spotify disconnection: {ex.Message}");
+            }
         }
 
         private void OnYouTubeConnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                StatusText.Text = "YouTube Music player ready!";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = "YouTube Music player ready!";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling YouTube connection: {ex.Message}");
+            }
         }
 
         private void OnYouTubeDisconnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                StatusText.Text = "YouTube Music disconnected.";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = "YouTube Music disconnected.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling YouTube disconnection: {ex.Message}");
+            }
         }
 
         private void OnOBSConnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                StatusText.Text = "Connected to OBS! Scene switching available.";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = "Connected to OBS! Scene switching available.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling OBS connection: {ex.Message}");
+            }
         }
 
         private void OnOBSDisconnected(object sender, EventArgs e)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                StatusText.Text = "Disconnected from OBS.";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = "Disconnected from OBS.";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling OBS disconnection: {ex.Message}");
+            }
         }
 
         private void OnOBSError(object sender, string error)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                StatusText.Text = $"OBS Error: {error}";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    StatusText.Text = $"OBS Error: {error}";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling OBS error: {ex.Message}");
+            }
         }
 
         #endregion
@@ -281,34 +400,46 @@ namespace EZStreamer.Views
 
         private void SkipSong_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(async () =>
+            try
             {
-                try
+                var currentSong = SongQueue.FirstOrDefault(s => s.Status == SongRequestStatus.Playing);
+                if (currentSong != null)
                 {
-                    await _songRequestService.SkipCurrentSong();
-                    Dispatcher.Invoke(() => StatusText.Text = "Song skipped.");
+                    OnSongCompleted(this, currentSong);
+                    StatusText.Text = "Song skipped.";
                 }
-                catch (Exception ex)
+                else
                 {
-                    Dispatcher.Invoke(() => StatusText.Text = $"Error skipping song: {ex.Message}");
+                    StatusText.Text = "No song currently playing to skip.";
                 }
-            });
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Error skipping song: {ex.Message}";
+            }
         }
 
         private void UpdateStreamInfo_Click(object sender, RoutedEventArgs e)
         {
-            var title = StreamTitleTextBox.Text;
-            var category = StreamCategoryTextBox.Text;
-            
-            if (string.IsNullOrWhiteSpace(title))
-            {
-                MessageBox.Show("Please enter a stream title.", "EZStreamer", 
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            
             try
             {
+                var title = StreamTitleTextBox.Text?.Trim();
+                var category = StreamCategoryTextBox.Text?.Trim();
+                
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    MessageBox.Show("Please enter a stream title.", "EZStreamer", 
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                
+                if (!_twitchService.IsConnected)
+                {
+                    MessageBox.Show("Please connect to Twitch first.", "Not Connected", 
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                
                 _twitchService.UpdateStreamInfo(title, category);
                 StatusText.Text = "Stream information updated.";
             }
@@ -322,7 +453,15 @@ namespace EZStreamer.Views
         {
             try
             {
-                Process.Start("explorer.exe", _overlayService.OverlayFolderPath);
+                if (Directory.Exists(_overlayService.OverlayFolderPath))
+                {
+                    Process.Start("explorer.exe", _overlayService.OverlayFolderPath);
+                }
+                else
+                {
+                    Directory.CreateDirectory(_overlayService.OverlayFolderPath);
+                    Process.Start("explorer.exe", _overlayService.OverlayFolderPath);
+                }
             }
             catch (Exception ex)
             {
@@ -333,18 +472,25 @@ namespace EZStreamer.Views
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            // Switch to settings tab
-            TabControl.SelectedIndex = 3; // Settings tab is the 4th tab (index 3)
+            try
+            {
+                // Switch to settings tab
+                TabControl.SelectedIndex = 3; // Settings tab is the 4th tab (index 3)
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error switching to settings: {ex.Message}");
+            }
         }
 
-        // New test functionality
+        // Test functionality
         private void AddTestSong_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var title = TestSongTitleTextBox.Text.Trim();
-                var artist = TestSongArtistTextBox.Text.Trim();
-                var requester = TestRequesterTextBox.Text.Trim();
+                var title = TestSongTitleTextBox.Text?.Trim();
+                var artist = TestSongArtistTextBox.Text?.Trim();
+                var requester = TestRequesterTextBox.Text?.Trim();
                 var platform = TestPlatformComboBox.SelectedIndex == 0 ? "Spotify" : "YouTube";
 
                 if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(artist))
@@ -361,7 +507,8 @@ namespace EZStreamer.Views
                     RequestedBy = string.IsNullOrEmpty(requester) ? "TestUser" : requester,
                     SourcePlatform = platform,
                     Timestamp = DateTime.Now,
-                    Status = SongRequestStatus.Queued
+                    Status = SongRequestStatus.Queued,
+                    Duration = TimeSpan.FromMinutes(3) // Default duration
                 };
 
                 SongQueue.Add(testSong);
@@ -370,6 +517,19 @@ namespace EZStreamer.Views
                 StatusText.Text = $"Test song added: {title} by {artist}";
                 
                 // Generate random suggestions for next test
+                GenerateRandomSongSuggestion();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error adding test song: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void GenerateRandomSongSuggestion()
+        {
+            try
+            {
                 var songSuggestions = new[]
                 {
                     ("Bohemian Rhapsody", "Queen"),
@@ -379,7 +539,9 @@ namespace EZStreamer.Views
                     ("Sweet Child O' Mine", "Guns N' Roses"),
                     ("Thunderstruck", "AC/DC"),
                     ("Smells Like Teen Spirit", "Nirvana"),
-                    ("Billie Jean", "Michael Jackson")
+                    ("Billie Jean", "Michael Jackson"),
+                    ("Don't Stop Believin'", "Journey"),
+                    ("Livin' on a Prayer", "Bon Jovi")
                 };
                 
                 var random = new Random();
@@ -389,8 +551,7 @@ namespace EZStreamer.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error adding test song: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                Debug.WriteLine($"Error generating song suggestion: {ex.Message}");
             }
         }
 
@@ -414,6 +575,12 @@ namespace EZStreamer.Views
                 if (result == MessageBoxResult.Yes)
                 {
                     SongQueue.Clear();
+                    
+                    // Clear current song display
+                    CurrentSongTitle.Text = "No song playing";
+                    CurrentSongArtist.Text = "Queue cleared";
+                    RequestedBy.Text = "";
+                    
                     StatusText.Text = "Song queue cleared.";
                 }
             }
@@ -430,17 +597,7 @@ namespace EZStreamer.Views
             {
                 if (sender is Button button && button.Tag is SongRequest song)
                 {
-                    // Simulate playing the song
-                    OnSongStarted(this, song);
-                    
-                    // Move to top of queue if not already
-                    if (SongQueue.Contains(song))
-                    {
-                        SongQueue.Remove(song);
-                        SongQueue.Insert(0, song);
-                    }
-                    
-                    StatusText.Text = $"Now playing: {song.Title} by {song.Artist}";
+                    PlaySong(song);
                 }
             }
             catch (Exception ex)
@@ -450,12 +607,53 @@ namespace EZStreamer.Views
             }
         }
 
+        private void PlaySong(SongRequest song)
+        {
+            try
+            {
+                // Mark current song as playing
+                OnSongStarted(this, song);
+                
+                // Move to top of queue if not already
+                if (SongQueue.Contains(song))
+                {
+                    SongQueue.Remove(song);
+                    SongQueue.Insert(0, song);
+                }
+                
+                // Simulate song playing for demo purposes
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Wait for song duration (or 10 seconds for demo)
+                        var duration = song.Duration > TimeSpan.Zero ? song.Duration : TimeSpan.FromSeconds(10);
+                        await Task.Delay(duration);
+                        
+                        // Mark song as completed
+                        OnSongCompleted(this, song);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error in song playback simulation: {ex.Message}");
+                    }
+                });
+                
+                StatusText.Text = $"Playing: {song.Title} by {song.Artist}";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Error playing song: {ex.Message}";
+            }
+        }
+
         private void RemoveFromQueue_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 if (sender is Button button && button.Tag is SongRequest song)
                 {
+                    song.Status = SongRequestStatus.Skipped;
                     SongQueue.Remove(song);
                     StatusText.Text = $"Removed {song.Title} from queue.";
                 }
@@ -475,6 +673,9 @@ namespace EZStreamer.Views
         {
             try
             {
+                if (string.IsNullOrEmpty(accessToken))
+                    return;
+                    
                 _twitchService.Connect(accessToken);
                 
                 // Save token
@@ -484,8 +685,8 @@ namespace EZStreamer.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to connect to Twitch: {ex.Message}", "EZStreamer", 
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                Debug.WriteLine($"Failed to connect to Twitch: {ex.Message}");
+                Dispatcher.Invoke(() => StatusText.Text = "Twitch connection failed. Check your token in Settings.");
             }
         }
 
@@ -493,6 +694,9 @@ namespace EZStreamer.Views
         {
             try
             {
+                if (string.IsNullOrEmpty(accessToken))
+                    return;
+                    
                 await _spotifyService.Connect(accessToken);
                 
                 // Save token
@@ -502,21 +706,8 @@ namespace EZStreamer.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to connect to Spotify: {ex.Message}", "EZStreamer", 
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void ConnectYouTube()
-        {
-            try
-            {
-                _youtubeMusicService.Connect();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to connect to YouTube Music: {ex.Message}", "EZStreamer", 
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                Debug.WriteLine($"Failed to connect to Spotify: {ex.Message}");
+                Dispatcher.Invoke(() => StatusText.Text = "Spotify connection failed. Check your token in Settings.");
             }
         }
 
@@ -528,7 +719,7 @@ namespace EZStreamer.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Auto-connect to OBS failed: {ex.Message}");
+                Debug.WriteLine($"Auto-connect to OBS failed: {ex.Message}");
             }
         }
 
@@ -545,63 +736,54 @@ namespace EZStreamer.Views
         {
             try
             {
-                // Disconnect and dispose services properly
+                // Disconnect services without showing messages
                 _twitchService?.Disconnect();
                 _spotifyService?.Disconnect();
                 
-                // Force close YouTube player window if it exists
-                if (_youtubeMusicService?.IsConnected == true)
+                // Silently close YouTube player if it exists
+                try
                 {
-                    var youtubeService = _youtubeMusicService as YouTubeMusicService;
-                    if (youtubeService != null)
+                    if (_youtubeMusicService?.IsConnected == true)
                     {
-                        try
-                        {
-                            // Use reflection to access the private _playerWindow field
-                            var playerWindowField = youtubeService.GetType().GetField("_playerWindow", 
-                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                            
-                            if (playerWindowField?.GetValue(youtubeService) is YouTubePlayerWindow playerWindow)
-                            {
-                                Application.Current.Dispatcher.Invoke(() =>
-                                {
-                                    playerWindow.ForceClose();
-                                });
-                            }
-                        }
-                        catch
-                        {
-                            // Ignore reflection errors, just disconnect normally
-                        }
+                        _youtubeMusicService.Disconnect();
                     }
-                    
-                    _youtubeMusicService.Disconnect();
+                }
+                catch
+                {
+                    // Ignore YouTube cleanup errors
                 }
                 
                 // Disconnect OBS with timeout
-                if (_obsService?.IsConnected == true)
+                try
                 {
-                    var disconnectTask = _obsService.DisconnectAsync();
-                    
-                    // Wait up to 2 seconds for graceful disconnect
-                    if (!disconnectTask.Wait(2000))
+                    if (_obsService?.IsConnected == true)
                     {
-                        System.Diagnostics.Debug.WriteLine("OBS disconnect timed out");
+                        var disconnectTask = _obsService.DisconnectAsync();
+                        if (!disconnectTask.Wait(1000)) // Reduced timeout
+                        {
+                            Debug.WriteLine("OBS disconnect timed out");
+                        }
                     }
                 }
+                catch
+                {
+                    // Ignore OBS cleanup errors
+                }
                 
-                // Dispose OBS service
-                _obsService?.Dispose();
-                
-                // Force garbage collection to clean up any WebView2 processes
-                System.GC.Collect();
-                System.GC.WaitForPendingFinalizers();
-                System.GC.Collect();
+                // Dispose services
+                try
+                {
+                    _obsService?.Dispose();
+                }
+                catch
+                {
+                    // Ignore disposal errors
+                }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error during cleanup: {ex.Message}");
-                // Don't throw exceptions during cleanup as it might prevent shutdown
+                Debug.WriteLine($"Error during cleanup: {ex.Message}");
+                // Don't show error messages during shutdown
             }
         }
     }
