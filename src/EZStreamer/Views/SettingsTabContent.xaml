@@ -3,66 +3,134 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
     
+    <UserControl.Resources>
+        <!-- Status indicator styles -->
+        <Style x:Key="ConnectedStatus" TargetType="Ellipse">
+            <Setter Property="Fill" Value="#4CAF50"/>
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        
+        <Style x:Key="DisconnectedStatus" TargetType="Ellipse">
+            <Setter Property="Fill" Value="#F44336"/>
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        
+        <Style x:Key="ContentCard" TargetType="materialDesign:Card">
+            <Setter Property="Margin" Value="0,0,0,16"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+    </UserControl.Resources>
+    
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="16">
-            <!-- Account Connections -->
+            <!-- API Credentials Configuration -->
             <materialDesign:Card Style="{StaticResource ContentCard}">
                 <StackPanel>
-                    <TextBlock Text="Account Connections" 
+                    <TextBlock Text="API Credentials Configuration" 
                              FontSize="18" 
                              FontWeight="Medium" 
                              Margin="0,0,0,16"/>
+                    <TextBlock Text="Configure your API credentials here. These are required for the services to work properly." 
+                             Opacity="0.7"
+                             Margin="0,0,0,16"/>
                     
-                    <!-- Twitch Connection -->
-                    <Grid Margin="0,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <Ellipse Grid.Column="0" x:Name="TwitchStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
-                        <TextBlock Grid.Column="1" Text="Twitch" VerticalAlignment="Center"/>
-                        <Button Grid.Column="2" 
-                              x:Name="TwitchConnectButton"
-                              Content="Connect" 
-                              Style="{StaticResource MaterialDesignRaisedButton}"
-                              Click="ConnectTwitch_Click"/>
-                    </Grid>
+                    <!-- Twitch Credentials -->
+                    <Expander Header="Twitch API Credentials" Margin="0,0,0,12">
+                        <StackPanel Margin="0,8,0,0">
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Grid.Column="0" x:Name="TwitchStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
+                                <TextBlock Grid.Column="1" Text="Status" VerticalAlignment="Center"/>
+                                <Button Grid.Column="2" Content="Test Connection" 
+                                      Style="{StaticResource MaterialDesignOutlinedButton}"
+                                      Click="ConnectTwitch_Click"/>
+                            </Grid>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Client ID:" Width="100" VerticalAlignment="Center"/>
+                                <TextBox x:Name="TwitchClientIdTextBox" Width="300" Margin="0,0,8,0"/>
+                                <Button Content="Save" Click="SaveTwitchCredentials_Click" 
+                                      Style="{StaticResource MaterialDesignRaisedButton}"/>
+                            </StackPanel>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Client Secret:" Width="100" VerticalAlignment="Center"/>
+                                <PasswordBox x:Name="TwitchClientSecretTextBox" Width="300"/>
+                            </StackPanel>
+                            
+                            <TextBlock Text="Get your Twitch API credentials from: https://dev.twitch.tv/console" 
+                                     Opacity="0.7" FontSize="11" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Expander>
                     
-                    <!-- Spotify Connection -->
-                    <Grid Margin="0,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <Ellipse Grid.Column="0" x:Name="SpotifyStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
-                        <TextBlock Grid.Column="1" Text="Spotify" VerticalAlignment="Center"/>
-                        <Button Grid.Column="2" 
-                              x:Name="SpotifyConnectButton"
-                              Content="Connect" 
-                              Style="{StaticResource MaterialDesignRaisedButton}"
-                              Click="ConnectSpotify_Click"/>
-                    </Grid>
+                    <!-- Spotify Credentials -->
+                    <Expander Header="Spotify API Credentials" Margin="0,0,0,12">
+                        <StackPanel Margin="0,8,0,0">
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Grid.Column="0" x:Name="SpotifyStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
+                                <TextBlock Grid.Column="1" Text="Status" VerticalAlignment="Center"/>
+                                <Button Grid.Column="2" Content="Test Connection" 
+                                      Style="{StaticResource MaterialDesignOutlinedButton}"
+                                      Click="ConnectSpotify_Click"/>
+                            </Grid>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Client ID:" Width="100" VerticalAlignment="Center"/>
+                                <TextBox x:Name="SpotifyClientIdTextBox" Width="300" Margin="0,0,8,0"/>
+                                <Button Content="Save" Click="SaveSpotifyCredentials_Click" 
+                                      Style="{StaticResource MaterialDesignRaisedButton}"/>
+                            </StackPanel>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Client Secret:" Width="100" VerticalAlignment="Center"/>
+                                <PasswordBox x:Name="SpotifyClientSecretTextBox" Width="300"/>
+                            </StackPanel>
+                            
+                            <TextBlock Text="Get your Spotify API credentials from: https://developer.spotify.com/dashboard" 
+                                     Opacity="0.7" FontSize="11" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Expander>
                     
-                    <!-- YouTube Connection -->
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <Ellipse Grid.Column="0" x:Name="YouTubeStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
-                        <TextBlock Grid.Column="1" Text="YouTube Music" VerticalAlignment="Center"/>
-                        <Button Grid.Column="2" 
-                              x:Name="YouTubeConnectButton"
-                              Content="Connect" 
-                              Style="{StaticResource MaterialDesignRaisedButton}"
-                              Click="ConnectYouTube_Click"/>
-                    </Grid>
+                    <!-- YouTube Credentials -->
+                    <Expander Header="YouTube API Credentials (Optional)" Margin="0,0,0,12">
+                        <StackPanel Margin="0,8,0,0">
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Grid.Column="0" x:Name="YouTubeStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
+                                <TextBlock Grid.Column="1" Text="Status" VerticalAlignment="Center"/>
+                                <Button Grid.Column="2" Content="Test Connection" 
+                                      Style="{StaticResource MaterialDesignOutlinedButton}"
+                                      Click="ConnectYouTube_Click"/>
+                            </Grid>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="API Key:" Width="100" VerticalAlignment="Center"/>
+                                <TextBox x:Name="YouTubeAPIKeyTextBox" Width="300" Margin="0,0,8,0"/>
+                                <Button Content="Save" Click="SaveYouTubeCredentials_Click" 
+                                      Style="{StaticResource MaterialDesignRaisedButton}"/>
+                            </StackPanel>
+                            
+                            <TextBlock Text="Get your YouTube API key from: https://console.developers.google.com" 
+                                     Opacity="0.7" FontSize="11" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Expander>
                 </StackPanel>
             </materialDesign:Card>
 
@@ -89,12 +157,16 @@
                     <CheckBox x:Name="AutoPlayNextSongCheckBox" 
                             Content="Automatically play next song in queue" 
                             IsChecked="True"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                             
                     <CheckBox x:Name="ShowYouTubePlayerCheckBox" 
                             Content="Show YouTube player window when playing YouTube songs" 
                             IsChecked="True"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                 </StackPanel>
             </materialDesign:Card>
 
@@ -109,12 +181,16 @@
                     <CheckBox x:Name="EnableChatCommandsCheckBox" 
                             Content="Enable chat commands (!songrequest)" 
                             IsChecked="True"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                     
                     <CheckBox x:Name="EnableChannelPointsCheckBox" 
                             Content="Enable channel point redemptions" 
                             IsChecked="True"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
                         <TextBlock Text="Chat command:" 
@@ -122,7 +198,8 @@
                                  Margin="0,0,8,0"/>
                         <TextBox x:Name="ChatCommandTextBox" 
                                Text="!songrequest" 
-                               Width="120"/>
+                               Width="120"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -131,7 +208,8 @@
                                  Margin="0,0,8,0"/>
                         <TextBox x:Name="MaxQueueLengthTextBox" 
                                Text="10" 
-                               Width="60"/>
+                               Width="60"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -140,7 +218,8 @@
                                  Margin="0,0,8,0"/>
                         <TextBox x:Name="RequestCooldownTextBox" 
                                Text="0" 
-                               Width="60"/>
+                               Width="60"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                     </StackPanel>
                 </StackPanel>
             </materialDesign:Card>
@@ -177,14 +256,16 @@
                         <TextBox Grid.Column="1" 
                                x:Name="OBSServerTextBox"
                                Text="localhost"
-                               Margin="0,0,8,0"/>
+                               Margin="0,0,8,0"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                         <TextBlock Grid.Column="2" 
                                  Text="Port:" 
                                  VerticalAlignment="Center" 
                                  Margin="0,0,8,0"/>
                         <TextBox Grid.Column="3" 
                                x:Name="OBSPortTextBox"
-                               Text="4455"/>
+                               Text="4455"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                     </Grid>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
@@ -208,11 +289,15 @@
                     
                     <CheckBox x:Name="OBSAutoConnectCheckBox" 
                             Content="Auto-connect to OBS on startup" 
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                             
                     <CheckBox x:Name="OBSSceneSwitchingCheckBox" 
                             Content="Enable automatic scene switching" 
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                 </StackPanel>
             </materialDesign:Card>
 
@@ -223,6 +308,15 @@
                              FontSize="18" 
                              FontWeight="Medium" 
                              Margin="0,0,0,16"/>
+                    
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock Text="Overlay Path:" 
+                                 VerticalAlignment="Center" 
+                                 Margin="0,0,12,0"/>
+                        <TextBox x:Name="OverlayPathTextBox" 
+                               IsReadOnly="True"
+                               Width="300"/>
+                    </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <TextBlock Text="Overlay Theme:" 
@@ -241,12 +335,16 @@
                     <CheckBox x:Name="OverlayShowAlbumArtCheckBox" 
                             Content="Show album art in overlay" 
                             IsChecked="True"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                             
                     <CheckBox x:Name="OverlayShowRequesterCheckBox" 
                             Content="Show requester name in overlay" 
                             IsChecked="True"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
                         <TextBlock Text="Display duration (0 = always show):" 
@@ -254,7 +352,8 @@
                                  Margin="0,0,8,0"/>
                         <TextBox x:Name="OverlayDurationTextBox" 
                                Text="0" 
-                               Width="60"/>
+                               Width="60"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                         <TextBlock Text="seconds" 
                                  VerticalAlignment="Center" 
                                  Margin="8,0,0,0"/>
@@ -283,15 +382,21 @@
                     <CheckBox x:Name="AllowExplicitContentCheckBox" 
                             Content="Allow explicit content in song requests" 
                             IsChecked="True"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                             
                     <CheckBox x:Name="RequireFollowersOnlyCheckBox" 
                             Content="Require requesters to be followers" 
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                             
                     <CheckBox x:Name="RequireSubscribersOnlyCheckBox" 
                             Content="Require requesters to be subscribers" 
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            Checked="SettingsCheckBox_Changed"
+                            Unchecked="SettingsCheckBox_Changed"/>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
                         <TextBlock Text="Min song duration:" 
@@ -299,7 +404,8 @@
                                  Margin="0,0,8,0"/>
                         <TextBox x:Name="MinDurationTextBox" 
                                Text="30" 
-                               Width="60"/>
+                               Width="60"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                         <TextBlock Text="seconds" 
                                  VerticalAlignment="Center" 
                                  Margin="8,0,16,0"/>
@@ -309,7 +415,8 @@
                                  Margin="0,0,8,0"/>
                         <TextBox x:Name="MaxDurationTextBox" 
                                Text="600" 
-                               Width="60"/>
+                               Width="60"
+                               TextChanged="SettingsTextBox_TextChanged"/>
                         <TextBlock Text="seconds" 
                                  VerticalAlignment="Center" 
                                  Margin="8,0,0,0"/>
