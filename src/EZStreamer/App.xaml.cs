@@ -10,6 +10,27 @@ namespace EZStreamer
             
             // Set up global exception handling
             this.DispatcherUnhandledException += App_DispatcherUnhandledException;
+            
+            // Set up proper shutdown handling
+            this.ShutdownMode = ShutdownMode.OnMainWindowClose;
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            // Force cleanup of any remaining WebView2 processes
+            try
+            {
+                // This helps clean up WebView2 processes that might be lingering
+                System.GC.Collect();
+                System.GC.WaitForPendingFinalizers();
+                System.GC.Collect();
+            }
+            catch
+            {
+                // Ignore any cleanup errors during shutdown
+            }
+
+            base.OnExit(e);
         }
 
         private void App_DispatcherUnhandledException(object sender, 
@@ -22,6 +43,13 @@ namespace EZStreamer
                 MessageBoxImage.Error);
             
             e.Handled = true;
+            
+            // If there's a critical error, force shutdown
+            if (e.Exception is System.OutOfMemoryException || 
+                e.Exception is System.StackOverflowException)
+            {
+                this.Shutdown(1);
+            }
         }
     }
 }
