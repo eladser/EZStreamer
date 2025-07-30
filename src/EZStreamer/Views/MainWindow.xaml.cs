@@ -41,6 +41,9 @@ namespace EZStreamer.Views
             _songRequestService = new SongRequestService(_twitchService, _spotifyService, _youtubeMusicService, _settingsService);
             _overlayService = new OverlayService();
             
+            // Set Client IDs for services
+            _twitchService.SetClientId(_configurationService.GetTwitchClientId());
+            
             // Initialize collections
             SongQueue = new ObservableCollection<SongRequest>();
             RequestHistory = new ObservableCollection<SongRequest>();
@@ -58,7 +61,7 @@ namespace EZStreamer.Views
             UpdateStatusIndicators();
             UpdateQueueDisplay();
             
-            StatusText.Text = "EZStreamer ready! Add test songs or configure your accounts in Settings.";
+            StatusText.Text = "EZStreamer ready! Connect to Twitch and type !songrequest <song name> in chat to test.";
         }
 
         private void LoadSettings()
@@ -101,6 +104,7 @@ namespace EZStreamer.Views
             // Service connection events
             _twitchService.Connected += OnTwitchConnected;
             _twitchService.Disconnected += OnTwitchDisconnected;
+            _twitchService.MessageReceived += OnTwitchMessageReceived;
             _spotifyService.Connected += OnSpotifyConnected;
             _spotifyService.Disconnected += OnSpotifyDisconnected;
             _youtubeMusicService.Connected += OnYouTubeConnected;
@@ -111,6 +115,22 @@ namespace EZStreamer.Views
             
             // Collection change events
             SongQueue.CollectionChanged += (s, e) => UpdateQueueDisplay();
+        }
+
+        private void OnTwitchMessageReceived(object sender, string message)
+        {
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    // Update status to show recent chat activity
+                    StatusText.Text = $"Chat: {message}";
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error handling Twitch message: {ex.Message}");
+            }
         }
 
         private void UpdateStatusIndicators()
@@ -228,7 +248,7 @@ namespace EZStreamer.Views
                         if (SongQueue.Count == 0)
                         {
                             CurrentSongTitle.Text = "No song playing";
-                            CurrentSongArtist.Text = "Add songs to queue or connect to Twitch";
+                            CurrentSongArtist.Text = "Use !songrequest <song> in Twitch chat or add test songs";
                             RequestedBy.Text = "";
                         }
                     }
@@ -262,7 +282,7 @@ namespace EZStreamer.Views
                 Dispatcher.Invoke(() =>
                 {
                     UpdateStatusIndicators();
-                    StatusText.Text = "Connected to Twitch! You can now receive song requests.";
+                    StatusText.Text = $"Connected to Twitch as {_twitchService.ChannelName}! You can now receive song requests with !songrequest <song>";
                 });
             }
             catch (Exception ex)
@@ -398,20 +418,12 @@ namespace EZStreamer.Views
 
         #region Button Click Handlers
 
-        private void SkipSong_Click(object sender, RoutedEventArgs e)
+        private async void SkipSong_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var currentSong = SongQueue.FirstOrDefault(s => s.Status == SongRequestStatus.Playing);
-                if (currentSong != null)
-                {
-                    OnSongCompleted(this, currentSong);
-                    StatusText.Text = "Song skipped.";
-                }
-                else
-                {
-                    StatusText.Text = "No song currently playing to skip.";
-                }
+                await _songRequestService.SkipCurrentSong();
+                StatusText.Text = "Song skipped.";
             }
             catch (Exception ex)
             {
@@ -484,14 +496,13 @@ namespace EZStreamer.Views
         }
 
         // Test functionality
-        private void AddTestSong_Click(object sender, RoutedEventArgs e)
+        private async void AddTestSong_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 var title = TestSongTitleTextBox.Text?.Trim();
                 var artist = TestSongArtistTextBox.Text?.Trim();
                 var requester = TestRequesterTextBox.Text?.Trim();
-                var platform = TestPlatformComboBox.SelectedIndex == 0 ? "Spotify" : "YouTube";
 
                 if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(artist))
                 {
@@ -500,21 +511,10 @@ namespace EZStreamer.Views
                     return;
                 }
 
-                var testSong = new SongRequest
-                {
-                    Title = title,
-                    Artist = artist,
-                    RequestedBy = string.IsNullOrEmpty(requester) ? "TestUser" : requester,
-                    SourcePlatform = platform,
-                    Timestamp = DateTime.Now,
-                    Status = SongRequestStatus.Queued,
-                    Duration = TimeSpan.FromMinutes(3) // Default duration
-                };
-
-                SongQueue.Add(testSong);
-                RequestHistory.Insert(0, testSong);
+                var query = $"{title} {artist}";
+                await _songRequestService.ProcessSongRequest(query, string.IsNullOrEmpty(requester) ? "TestUser" : requester, "manual");
                 
-                StatusText.Text = $"Test song added: {title} by {artist}";
+                StatusText.Text = $"Test song requested: {title} by {artist}";
                 
                 // Generate random suggestions for next test
                 GenerateRandomSongSuggestion();
@@ -575,6 +575,7 @@ namespace EZStreamer.Views
                 if (result == MessageBoxResult.Yes)
                 {
                     SongQueue.Clear();
+                    _songRequestService.ClearQueue();
                     
                     // Clear current song display
                     CurrentSongTitle.Text = "No song playing";
@@ -597,7 +598,7 @@ namespace EZStreamer.Views
             {
                 if (sender is Button button && button.Tag is SongRequest song)
                 {
-                    PlaySong(song);
+                    Task.Run(() => _songRequestService.PlaySong(song));
                 }
             }
             catch (Exception ex)
@@ -611,35 +612,7 @@ namespace EZStreamer.Views
         {
             try
             {
-                // Mark current song as playing
-                OnSongStarted(this, song);
-                
-                // Move to top of queue if not already
-                if (SongQueue.Contains(song))
-                {
-                    SongQueue.Remove(song);
-                    SongQueue.Insert(0, song);
-                }
-                
-                // Simulate song playing for demo purposes
-                Task.Run(async () =>
-                {
-                    try
-                    {
-                        // Wait for song duration (or 10 seconds for demo)
-                        var duration = song.Duration > TimeSpan.Zero ? song.Duration : TimeSpan.FromSeconds(10);
-                        await Task.Delay(duration);
-                        
-                        // Mark song as completed
-                        OnSongCompleted(this, song);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error in song playback simulation: {ex.Message}");
-                    }
-                });
-                
-                StatusText.Text = $"Playing: {song.Title} by {song.Artist}";
+                Task.Run(() => _songRequestService.PlaySong(song));
             }
             catch (Exception ex)
             {
@@ -655,6 +628,7 @@ namespace EZStreamer.Views
                 {
                     song.Status = SongRequestStatus.Skipped;
                     SongQueue.Remove(song);
+                    _songRequestService.RemoveSongFromQueue(song);
                     StatusText.Text = $"Removed {song.Title} from queue.";
                 }
             }
@@ -662,6 +636,20 @@ namespace EZStreamer.Views
             {
                 MessageBox.Show($"Error removing song: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // Add test Twitch message button for debugging
+        private void TestTwitchMessage_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _twitchService.SimulateSongRequest("TestUser", "bohemian rhapsody queen");
+                StatusText.Text = "Test song request simulated.";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Error simulating message: {ex.Message}";
             }
         }
 
@@ -774,6 +762,9 @@ namespace EZStreamer.Views
                 try
                 {
                     _obsService?.Dispose();
+                    _twitchService?.Dispose();
+                    _spotifyService?.Dispose();
+                    _songRequestService?.Dispose();
                 }
                 catch
                 {
