@@ -37,6 +37,19 @@ namespace EZStreamer.Views
             {
                 ShowConfigurationNeeded();
             }
+            else
+            {
+                // Initialize WebView if client ID is available
+                if (AuthWebView.CoreWebView2 == null)
+                {
+                    // WebView2 will automatically initialize and trigger the initialization event
+                }
+                else
+                {
+                    // WebView2 is already initialized, navigate directly
+                    NavigateToTwitchAuth();
+                }
+            }
         }
 
         private void ShowConfigurationNeeded()
@@ -75,8 +88,7 @@ namespace EZStreamer.Views
                 
                 // Restart the authentication process
                 LoadingPanel.Visibility = Visibility.Visible;
-                AuthWebView_CoreWebView2InitializationCompleted(null, 
-                    new CoreWebView2InitializationCompletedEventArgs());
+                NavigateToTwitchAuth();
             }
             else
             {
@@ -85,8 +97,7 @@ namespace EZStreamer.Views
             }
         }
 
-        // Fixed CS1998: Removed async since no await is used
-        private void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
+        private void NavigateToTwitchAuth()
         {
             try
             {
@@ -96,16 +107,48 @@ namespace EZStreamer.Views
                     return;
                 }
 
+                // Navigate to Twitch OAuth URL
+                var authUrl = $"https://id.twitch.tv/oauth2/authorize" +
+                            $"?response_type=token" +
+                            $"&client_id={_clientId}" +
+                            $"&redirect_uri={Uri.EscapeDataString(REDIRECT_URI)}" +
+                            $"&scope={Uri.EscapeDataString(SCOPES)}";
+
+                if (AuthWebView.CoreWebView2 != null)
+                {
+                    AuthWebView.CoreWebView2.Navigate(authUrl);
+                }
+                else
+                {
+                    // Store the URL to navigate after WebView2 initializes
+                    _pendingNavigationUrl = authUrl;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Error initializing authentication: {ex.Message}");
+            }
+        }
+
+        private string _pendingNavigationUrl;
+
+        // Fixed CS1998: Removed async since no await is used
+        private void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
+        {
+            try
+            {
                 if (e?.IsSuccess != false) // null or true
                 {
-                    // Navigate to Twitch OAuth URL
-                    var authUrl = $"https://id.twitch.tv/oauth2/authorize" +
-                                $"?response_type=token" +
-                                $"&client_id={_clientId}" +
-                                $"&redirect_uri={Uri.EscapeDataString(REDIRECT_URI)}" +
-                                $"&scope={Uri.EscapeDataString(SCOPES)}";
-
-                    AuthWebView.CoreWebView2.Navigate(authUrl);
+                    // If we have a pending navigation URL, navigate now
+                    if (!string.IsNullOrEmpty(_pendingNavigationUrl))
+                    {
+                        AuthWebView.CoreWebView2.Navigate(_pendingNavigationUrl);
+                        _pendingNavigationUrl = null;
+                    }
+                    else if (!string.IsNullOrEmpty(_clientId))
+                    {
+                        NavigateToTwitchAuth();
+                    }
                 }
                 else
                 {
