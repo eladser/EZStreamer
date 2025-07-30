@@ -9,7 +9,7 @@ namespace EZStreamer.Services
 {
     public class SpotifyService
     {
-        private ISpotifyApi _spotify;
+        private SpotifyApi _spotify;
         private string _accessToken;
         private Device _activeDevice;
 
