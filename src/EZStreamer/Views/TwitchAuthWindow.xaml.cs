@@ -3,6 +3,7 @@ using System.Web;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using EZStreamer.Services;
+using System.Threading.Tasks;
 
 namespace EZStreamer.Views
 {
@@ -24,31 +25,35 @@ namespace EZStreamer.Views
             
             LoadingPanel.Visibility = Visibility.Visible;
             
-            // Defer client ID check until after window is shown
-            this.Loaded += TwitchAuthWindow_Loaded;
+            // Initialize WebView2 immediately
+            InitializeWebView();
         }
 
-        private void TwitchAuthWindow_Loaded(object sender, RoutedEventArgs e)
+        private async void InitializeWebView()
         {
-            this.Loaded -= TwitchAuthWindow_Loaded; // Unsubscribe
-            
-            // Check if client ID is configured
-            if (string.IsNullOrEmpty(_clientId))
+            try
             {
-                ShowConfigurationNeeded();
-            }
-            else
-            {
-                // Initialize WebView if client ID is available
-                if (AuthWebView.CoreWebView2 == null)
+                // Ensure WebView2 runtime is available
+                string userDataFolder = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), 
+                    "EZStreamer_WebView2");
+
+                var environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+                await AuthWebView.EnsureCoreWebView2Async(environment);
+
+                // Check if client ID is configured
+                if (string.IsNullOrEmpty(_clientId))
                 {
-                    // WebView2 will automatically initialize and trigger the initialization event
+                    ShowConfigurationNeeded();
                 }
                 else
                 {
-                    // WebView2 is already initialized, navigate directly
                     NavigateToTwitchAuth();
                 }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Failed to initialize browser: {ex.Message}\\n\\nPlease ensure WebView2 runtime is installed.");
             }
         }
 
@@ -57,9 +62,9 @@ namespace EZStreamer.Views
             LoadingPanel.Visibility = Visibility.Collapsed;
             
             var result = MessageBox.Show(
-                "Twitch Client ID is not configured.\n\n" +
-                "Would you like to configure it now?\n\n" +
-                "You can get a Client ID from the Twitch Developer Console:\n" +
+                "Twitch Client ID is not configured.\\n\\n" +
+                "Would you like to configure it now?\\n\\n" +
+                "You can get a Client ID from the Twitch Developer Console:\\n" +
                 "https://dev.twitch.tv/console",
                 "Configuration Required",
                 MessageBoxButton.YesNo,
@@ -112,7 +117,10 @@ namespace EZStreamer.Views
                             $"?response_type=token" +
                             $"&client_id={_clientId}" +
                             $"&redirect_uri={Uri.EscapeDataString(REDIRECT_URI)}" +
-                            $"&scope={Uri.EscapeDataString(SCOPES)}";
+                            $"&scope={Uri.EscapeDataString(SCOPES)}" +
+                            $"&force_verify=true";
+
+                System.Diagnostics.Debug.WriteLine($"Navigating to: {authUrl}");
 
                 if (AuthWebView.CoreWebView2 != null)
                 {
@@ -120,8 +128,7 @@ namespace EZStreamer.Views
                 }
                 else
                 {
-                    // Store the URL to navigate after WebView2 initializes
-                    _pendingNavigationUrl = authUrl;
+                    ShowError("WebView2 is not initialized properly.");
                 }
             }
             catch (Exception ex)
@@ -130,34 +137,90 @@ namespace EZStreamer.Views
             }
         }
 
-        private string _pendingNavigationUrl;
-
-        // Fixed CS1998: Removed async since no await is used
         private void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
         {
             try
             {
-                if (e?.IsSuccess != false) // null or true
+                if (e.IsSuccess)
                 {
-                    // If we have a pending navigation URL, navigate now
-                    if (!string.IsNullOrEmpty(_pendingNavigationUrl))
-                    {
-                        AuthWebView.CoreWebView2.Navigate(_pendingNavigationUrl);
-                        _pendingNavigationUrl = null;
-                    }
-                    else if (!string.IsNullOrEmpty(_clientId))
+                    // Set up navigation event handler
+                    AuthWebView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
+                    AuthWebView.CoreWebView2.DOMContentLoaded += CoreWebView2_DOMContentLoaded;
+                    
+                    // Navigate to auth if we have client ID
+                    if (!string.IsNullOrEmpty(_clientId))
                     {
                         NavigateToTwitchAuth();
                     }
                 }
                 else
                 {
-                    ShowError("Failed to initialize web browser");
+                    ShowError("Failed to initialize web browser. Please ensure WebView2 runtime is installed.");
                 }
             }
             catch (Exception ex)
             {
                 ShowError($"Error initializing authentication: {ex.Message}");
+            }
+        }
+
+        private void CoreWebView2_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine($"Navigation starting to: {e.Uri}");
+            
+            // Check if this is our callback URL
+            if (e.Uri.StartsWith(REDIRECT_URI))
+            {
+                e.Cancel = true; // Cancel the navigation
+                ProcessCallback(e.Uri);
+            }
+        }
+
+        private void CoreWebView2_DOMContentLoaded(object sender, CoreWebView2DOMContentLoadedEventArgs e)
+        {
+            LoadingPanel.Visibility = Visibility.Collapsed;
+        }
+
+        private void ProcessCallback(string callbackUrl)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Processing callback: {callbackUrl}");
+                
+                var uri = new Uri(callbackUrl);
+                
+                // Parse the fragment for access token
+                var fragment = uri.Fragment.TrimStart('#');
+                var queryParams = HttpUtility.ParseQueryString(fragment);
+                
+                var accessToken = queryParams["access_token"];
+                var error = queryParams["error"];
+                var errorDescription = queryParams["error_description"];
+
+                if (!string.IsNullOrEmpty(error))
+                {
+                    ShowError($"Authentication failed: {error}\\n{errorDescription}");
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(accessToken))
+                {
+                    AccessToken = accessToken;
+                    IsAuthenticated = true;
+                    
+                    MessageBox.Show("Successfully connected to Twitch!", "Authentication Successful", 
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    
+                    DialogResult = true;
+                    Close();
+                    return;
+                }
+                
+                ShowError("No access token received from Twitch authentication.");
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Error processing authentication callback: {ex.Message}");
             }
         }
 
@@ -165,43 +228,27 @@ namespace EZStreamer.Views
         {
             LoadingPanel.Visibility = Visibility.Collapsed;
 
+            if (!e.IsSuccess)
+            {
+                ShowError($"Navigation failed: {e.WebErrorStatus}");
+                return;
+            }
+
             try
             {
-                var uri = new Uri(AuthWebView.CoreWebView2.Source);
+                var currentUrl = AuthWebView.CoreWebView2.Source;
+                System.Diagnostics.Debug.WriteLine($"Navigation completed to: {currentUrl}");
                 
-                // Check if this is the callback URL with access token
-                if (uri.Host == "localhost" && uri.LocalPath == "/auth/twitch/callback")
+                // Check if we're at the callback URL (shouldn't happen due to NavigationStarting handler)
+                if (currentUrl.StartsWith(REDIRECT_URI))
                 {
-                    // Parse the fragment for access token
-                    var fragment = uri.Fragment.TrimStart('#');
-                    var queryParams = HttpUtility.ParseQueryString(fragment);
-                    
-                    var accessToken = queryParams["access_token"];
-                    var error = queryParams["error"];
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        ShowError($"Authentication failed: {error}");
-                        return;
-                    }
-
-                    if (!string.IsNullOrEmpty(accessToken))
-                    {
-                        AccessToken = accessToken;
-                        IsAuthenticated = true;
-                        
-                        MessageBox.Show("Successfully connected to Twitch!", "Authentication Successful", 
-                            MessageBoxButton.OK, MessageBoxImage.Information);
-                        
-                        DialogResult = true;
-                        Close();
-                        return;
-                    }
+                    ProcessCallback(currentUrl);
                 }
-
+                
                 // Check for error in URL
-                if (uri.Query.Contains("error="))
+                if (currentUrl.Contains("error="))
                 {
+                    var uri = new Uri(currentUrl);
                     var queryParams = HttpUtility.ParseQueryString(uri.Query);
                     var error = queryParams["error"];
                     var errorDescription = queryParams["error_description"];
@@ -246,11 +293,13 @@ namespace EZStreamer.Views
             try
             {
                 // Clean up WebView2 resources properly
-                if (AuthWebView != null)
+                if (AuthWebView?.CoreWebView2 != null)
                 {
-                    // Dispose the WebView2 control which will clean up the CoreWebView2
-                    AuthWebView.Dispose();
+                    AuthWebView.CoreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
+                    AuthWebView.CoreWebView2.DOMContentLoaded -= CoreWebView2_DOMContentLoaded;
                 }
+                
+                AuthWebView?.Dispose();
             }
             catch
             {
@@ -396,10 +445,10 @@ namespace EZStreamer.Views
 
         private void InitializeComponent()
         {
-            Width = 400;
-            Height = 200;
+            Width = 500;
+            Height = 250;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            ResizeMode = ResizeMode.NoResize;
+            ResizeMode = ResizeMode.CanResize;
             
             var grid = new System.Windows.Controls.Grid();
             grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -418,10 +467,22 @@ namespace EZStreamer.Views
             };
             stackPanel.Children.Add(ServiceLabel);
 
+            var instructionText = new System.Windows.Controls.TextBlock
+            {
+                Text = "If the web authentication is not working, you can manually obtain an access token from:\\n" +
+                       "https://twitchtokengenerator.com\\n\\n" +
+                       "Select the required scopes and paste the token below:",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 5, 0, 15),
+                Opacity = 0.7
+            };
+            stackPanel.Children.Add(instructionText);
+
             TokenTextBox = new System.Windows.Controls.TextBox
             {
                 Margin = new Thickness(0, 10, 0, 20),
-                Height = 25
+                Height = 25,
+                AcceptsReturn = false
             };
             stackPanel.Children.Add(TokenTextBox);
 
