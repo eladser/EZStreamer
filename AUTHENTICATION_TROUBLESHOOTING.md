@@ -16,29 +16,37 @@
 
 ---
 
-### **🟡 Issue 2: Spotify Redirect URI Security Warning**
+### **🔴 Issue 2: Spotify HTTPS Redirect URI Requirement**
 
-**Warning:** `"This redirect URI is not secure. Learn more here."`
+**Error:** `"This redirect URI is not secure. Learn more here."`
 
-**✅ EXPLANATION:** This is expected behavior during development. Spotify shows this warning for localhost HTTP URLs but still allows them for development purposes.
+**✅ FIXED:** Updated Spotify authentication to use HTTPS redirect URI via GitHub Pages.
 
-**Solution Options:**
+**What was wrong:** Spotify now requires HTTPS redirect URIs for security, even in development.
 
-#### **Option A: Ignore the Warning (Recommended for Development)**
-- The warning doesn't prevent authentication
-- Click "Continue" or "I Understand" in Spotify's interface
-- This is normal for development environments
+**Old redirect URI:** `http://localhost:3000/auth/spotify/callback`
 
-#### **Option B: Use HTTPS for Production**
-- For production deployments, use HTTPS redirect URLs
-- Example: `https://yourdomain.com/auth/spotify/callback`
-- This requires a proper domain and SSL certificate
+**New redirect URI:** `https://eladser.github.io/ezstreamer/auth/spotify/callback`
 
 ---
 
-## **🚀 Step-by-Step Setup Guide**
+## **🚀 Complete Setup Guide**
 
-### **1. Configure Twitch Application**
+### **1. Enable GitHub Pages (Required for Spotify)**
+
+1. **Go to your repository Settings**
+2. **Scroll to "Pages" section**
+3. **Configure GitHub Pages:**
+   - Source: "Deploy from a branch"
+   - Branch: "main"
+   - Folder: "/docs"
+   - Click "Save"
+
+4. **Verify the callback page is accessible:**
+   - Visit: https://eladser.github.io/ezstreamer/auth/spotify/callback.html
+   - You should see the EZStreamer callback page
+
+### **2. Configure Twitch Application**
 
 1. **Go to Twitch Developer Console:**
    - Visit: https://dev.twitch.tv/console
@@ -52,9 +60,8 @@
 
 3. **Get Client ID:**
    - After creating the app, copy the **Client ID**
-   - Keep the **Client Secret** secure (not needed for this OAuth flow)
 
-### **2. Configure Spotify Application**
+### **3. Configure Spotify Application**
 
 1. **Go to Spotify Developer Dashboard:**
    - Visit: https://developer.spotify.com/dashboard
@@ -64,41 +71,54 @@
    - Click "Create App"
    - App name: `EZStreamer`
    - App description: `Stream overlay and music integration`
-   - Website: `http://localhost:3000` (or leave blank)
-   - Redirect URIs: `http://localhost:3000/auth/spotify/callback`
-   - Which API/SDKs are you planning to use: `Web API`
+   - Website: `https://eladser.github.io/ezstreamer/`
+   - **Redirect URIs:** `https://eladser.github.io/ezstreamer/auth/spotify/callback`
+   - Which API/SDKs: `Web API`
 
 3. **Get Client ID:**
    - After creating the app, copy the **Client ID**
-   - Click "Settings" to view/edit your app details
 
-### **3. Configure EZStreamer**
+### **4. Configure EZStreamer**
 
-1. **Open EZStreamer Application**
-2. **Go to Settings Tab**
-3. **Expand API Credentials Sections:**
+1. **Pull the latest code** from the repository
+2. **Build and run** EZStreamer
+3. **Go to Settings Tab**
+4. **Configure API Credentials:**
    - Enter your **Twitch Client ID**
    - Enter your **Spotify Client ID**
    - Click **Save** for each
 
-### **4. Test Authentication**
+### **5. Test Authentication**
 
 #### **For Twitch:**
 1. Click **"Test Connection"** next to Twitch
 2. Choose authentication method:
-   - **Web Authentication:** Uses browser (should work now with the fix)
-   - **Manual Token:** Uses external token generator (always reliable)
+   - **Web Authentication:** Should work with the scope fix
+   - **Manual Token:** Always reliable backup
 
 #### **For Spotify:**
 1. Click **"Test Connection"** next to Spotify
-2. When you see the security warning, click **"Continue"** or **"I Understand"**
-3. Authorize the application
+2. **No more security warnings!** The HTTPS redirect URI resolves this
+3. Follow the OAuth flow normally
 
 ---
 
-## **🎯 Manual Token Method (Recommended Backup)**
+## **🎯 How the New Spotify Flow Works**
 
-If web authentication still has issues, use the manual token method:
+1. **EZStreamer opens** the Spotify authorization URL
+2. **User authorizes** the application on Spotify
+3. **Spotify redirects** to the HTTPS callback page on GitHub Pages
+4. **Callback page extracts** the access token from the URL
+5. **User copies** the token from the callback page
+6. **User enters** the token manually in EZStreamer
+
+This approach solves the HTTPS requirement while keeping the authentication flow simple and secure.
+
+---
+
+## **🎯 Manual Token Method (Backup Option)**
+
+If web authentication has any issues, use the manual token method:
 
 ### **Twitch Manual Tokens:**
 1. Go to: https://twitchtokengenerator.com
@@ -126,6 +146,22 @@ If web authentication still has issues, use the manual token method:
 
 ## **🔍 Common Issues & Solutions**
 
+### **Issue: GitHub Pages Not Working**
+**Solution:**
+1. Make sure GitHub Pages is enabled in repository settings
+2. Use the `/docs` folder as the source
+3. Wait a few minutes for GitHub Pages to deploy
+4. Test the callback URL in your browser
+
+### **Issue: "Invalid Redirect URI"**
+**Solution:**
+1. Make sure your Spotify app redirect URI exactly matches:
+   ```
+   https://eladser.github.io/ezstreamer/auth/spotify/callback
+   ```
+2. No trailing slashes or extra characters
+3. Case-sensitive match required
+
 ### **Issue: WebView2 Not Working**
 **Solution:**
 1. Install Microsoft WebView2 Runtime
@@ -138,48 +174,40 @@ If web authentication still has issues, use the manual token method:
 2. Click "Save" after entering
 3. Restart the application if needed
 
-### **Issue: "Invalid Client ID"**
-**Solution:**
-1. Double-check the Client ID from your developer console
-2. Make sure there are no extra spaces or characters
-3. Verify the redirect URI matches exactly
-
-### **Issue: Authentication Window Stuck Loading**
-**Solution:**
-1. Close the authentication window
-2. Use the "Manual Token" option instead
-3. This bypasses all browser-related issues
-
 ---
 
 ## **🛡️ Security Notes**
 
-1. **Never share your Client Secret** (only Client ID is needed)
-2. **Tokens expire** - you'll need to re-authenticate periodically
-3. **For production apps**, use HTTPS redirect URLs
-4. **Keep tokens secure** - don't share them publicly
+1. **HTTPS is now required** for Spotify (handled via GitHub Pages)
+2. **Never share your Client Secret** (only Client ID is needed)
+3. **Tokens expire** - you'll need to re-authenticate periodically
+4. **GitHub Pages is public** - this is fine for OAuth callbacks
+5. **Keep tokens secure** - don't share them publicly
 
 ---
 
-## **✅ Verification Checklist**
+## **✅ Updated Verification Checklist**
 
-- [ ] Twitch app created with correct redirect URI
-- [ ] Spotify app created with correct redirect URI  
+- [ ] GitHub Pages enabled and working
+- [ ] Callback page accessible at: https://eladser.github.io/ezstreamer/auth/spotify/callback.html
+- [ ] Twitch app created with: `http://localhost:3000/auth/twitch/callback`
+- [ ] Spotify app created with: `https://eladser.github.io/ezstreamer/auth/spotify/callback`
 - [ ] Client IDs entered in EZStreamer settings
 - [ ] Settings saved successfully
 - [ ] WebView2 runtime installed
-- [ ] Can access Twitch authentication (no scope error)
-- [ ] Can access Spotify authentication (ignoring security warning)
+- [ ] Latest EZStreamer code pulled and built
+- [ ] Twitch authentication works (no scope error)
+- [ ] Spotify authentication works (no HTTPS warning)
 - [ ] Tokens received successfully
 
 ---
 
 ## **🆘 Still Having Issues?**
 
-1. **Check Windows Event Viewer** for WebView2 errors
-2. **Try manual token authentication** as a workaround
-3. **Restart EZStreamer** after making configuration changes
-4. **Update to the latest version** of EZStreamer
+1. **Check the callback page** in your browser first
+2. **Verify GitHub Pages** is properly configured
+3. **Double-check redirect URIs** in your app configurations
+4. **Try manual token authentication** as a workaround
 5. **Create an issue** in the GitHub repository with:
    - Error messages
    - Steps to reproduce
@@ -187,4 +215,13 @@ If web authentication still has issues, use the manual token method:
 
 ---
 
-**The fixes have been applied to your repository. Pull the latest changes and the Twitch authentication should work properly now!** 🎉
+**Both authentication issues have been resolved! The HTTPS redirect URI via GitHub Pages solves the Spotify security requirement, and the scope format fix resolves the Twitch error.** 🎉
+
+## **Quick Summary of Changes:**
+
+1. **Fixed Twitch scopes** - Changed from `+` to space separators
+2. **Added HTTPS redirect** - Uses GitHub Pages for Spotify OAuth
+3. **Created callback page** - Handles token extraction and display
+4. **Updated documentation** - Complete setup guide with new URLs
+
+Pull the latest changes and follow the setup guide above! 🚀
