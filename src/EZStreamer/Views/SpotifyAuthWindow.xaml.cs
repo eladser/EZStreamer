@@ -240,5 +240,24 @@ namespace EZStreamer.Views
             
             LoadingPanel.Visibility = Visibility.Collapsed;
         }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try
+            {
+                // Clean up WebView2 resources
+                if (AuthWebView?.CoreWebView2 != null)
+                {
+                    AuthWebView.CoreWebView2 = null;
+                }
+                AuthWebView?.Dispose();
+            }
+            catch
+            {
+                // Ignore cleanup errors during window close
+            }
+            
+            base.OnClosed(e);
+        }
     }
 }
