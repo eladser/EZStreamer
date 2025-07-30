@@ -10,6 +10,8 @@ namespace EZStreamer.Services
     {
         private readonly TwitchService _twitchService;
         private readonly SpotifyService _spotifyService;
+        private readonly YouTubeMusicService _youtubeMusicService;
+        private readonly SettingsService _settingsService;
         private readonly Queue<SongRequest> _songQueue;
         private SongRequest _currentSong;
         private bool _isProcessingQueue;
@@ -23,10 +25,13 @@ namespace EZStreamer.Services
         public IEnumerable<SongRequest> Queue => _songQueue.ToList();
         public int QueueCount => _songQueue.Count;
 
-        public SongRequestService(TwitchService twitchService, SpotifyService spotifyService)
+        public SongRequestService(TwitchService twitchService, SpotifyService spotifyService, 
+            YouTubeMusicService youtubeMusicService, SettingsService settingsService)
         {
             _twitchService = twitchService;
             _spotifyService = spotifyService;
+            _youtubeMusicService = youtubeMusicService;
+            _settingsService = settingsService;
             _songQueue = new Queue<SongRequest>();
 
             SetupEventHandlers();
@@ -41,6 +46,10 @@ namespace EZStreamer.Services
             // Listen for Spotify track events
             _spotifyService.TrackStarted += OnSpotifyTrackStarted;
             _spotifyService.TrackEnded += OnSpotifyTrackEnded;
+
+            // Listen for YouTube track events
+            _youtubeMusicService.TrackStarted += OnYouTubeTrackStarted;
+            _youtubeMusicService.TrackEnded += OnYouTubeTrackEnded;
         }
 
         public async Task ProcessSongRequest(string query, string requestedBy, string source = "chat")
@@ -53,13 +62,45 @@ namespace EZStreamer.Services
                     return;
                 }
 
-                // Search for the song on Spotify
-                var searchResults = await _spotifyService.SearchSongs(query, requestedBy, 1);
-                
+                // Check queue length limit
+                var settings = _settingsService.LoadSettings();
+                if (_songQueue.Count >= settings.MaxQueueLength)
+                {
+                    ErrorOccurred?.Invoke(this, $"Queue is full (max {settings.MaxQueueLength} songs)");
+                    _twitchService.SendChatMessage($"@{requestedBy} Sorry, the song queue is full! Please try again later.");
+                    return;
+                }
+
+                // Search for the song using preferred music source
+                List<SongRequest> searchResults = new List<SongRequest>();
+                var preferredSource = settings.PreferredMusicSource;
+
+                if (preferredSource == "Spotify" && _spotifyService.IsConnected)
+                {
+                    searchResults = await _spotifyService.SearchSongs(query, requestedBy, 1);
+                }
+                else if (preferredSource == "YouTube" && _youtubeMusicService.IsConnected)
+                {
+                    searchResults = await _youtubeMusicService.SearchSongs(query, requestedBy, 1);
+                }
+
+                // If preferred source failed, try the alternative
+                if (!searchResults.Any())
+                {
+                    if (preferredSource == "Spotify" && _youtubeMusicService.IsConnected)
+                    {
+                        searchResults = await _youtubeMusicService.SearchSongs(query, requestedBy, 1);
+                    }
+                    else if (preferredSource == "YouTube" && _spotifyService.IsConnected)
+                    {
+                        searchResults = await _spotifyService.SearchSongs(query, requestedBy, 1);
+                    }
+                }
+
                 if (!searchResults.Any())
                 {
                     ErrorOccurred?.Invoke(this, $"No songs found for '{query}'");
-                    _twitchService.SendChatMessage($"@{requestedBy} Sorry, I couldn't find '{query}' on Spotify.");
+                    _twitchService.SendChatMessage($"@{requestedBy} Sorry, I couldn't find '{query}' on any music service.");
                     return;
                 }
 
@@ -72,7 +113,8 @@ namespace EZStreamer.Services
                 SongRequested?.Invoke(this, song);
 
                 // Send confirmation to chat
-                _twitchService.SendChatMessage($"@{requestedBy} Added '{song.Title}' by {song.Artist} to the queue! Position: {_songQueue.Count}");
+                var sourceIcon = song.SourcePlatform == "Spotify" ? "🎵" : "📺";
+                _twitchService.SendChatMessage($"@{requestedBy} {sourceIcon} Added '{song.Title}' by {song.Artist} to the queue! Position: {_songQueue.Count}");
 
                 // Start processing queue if not already processing
                 if (!_isProcessingQueue)
@@ -89,7 +131,7 @@ namespace EZStreamer.Services
 
         public async Task ProcessQueue()
         {
-            if (_isProcessingQueue || !_spotifyService.IsConnected)
+            if (_isProcessingQueue)
                 return;
 
             _isProcessingQueue = true;
@@ -123,21 +165,26 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (!_spotifyService.IsConnected)
-                {
-                    ErrorOccurred?.Invoke(this, "Spotify is not connected");
-                    return;
-                }
-
                 _currentSong = song;
                 song.Status = SongRequestStatus.Playing;
 
-                var success = await _spotifyService.PlaySong(song);
-                
+                bool success = false;
+
+                // Play song using the appropriate service
+                if (song.SourcePlatform == "Spotify" && _spotifyService.IsConnected)
+                {
+                    success = await _spotifyService.PlaySong(song);
+                }
+                else if (song.SourcePlatform == "YouTube" && _youtubeMusicService.IsConnected)
+                {
+                    success = await _youtubeMusicService.PlaySong(song);
+                }
+
                 if (success)
                 {
                     SongStarted?.Invoke(this, song);
-                    _twitchService.SendChatMessage($"♪ Now playing: {song.Title} by {song.Artist} (requested by @{song.RequestedBy})");
+                    var sourceIcon = song.SourcePlatform == "Spotify" ? "🎵" : "📺";
+                    _twitchService.SendChatMessage($"{sourceIcon} Now playing: {song.Title} by {song.Artist} (requested by @{song.RequestedBy})");
                 }
                 else
                 {
@@ -146,6 +193,7 @@ namespace EZStreamer.Services
                     _twitchService.SendChatMessage($"@{song.RequestedBy} Sorry, I couldn't play '{song.Title}'. Skipping to next song.");
                     
                     // Try to play next song
+                    _currentSong = null;
                     await ProcessQueue();
                 }
             }
@@ -166,7 +214,15 @@ namespace EZStreamer.Services
                     var skippedSong = _currentSong;
                     skippedSong.Status = SongRequestStatus.Skipped;
                     
-                    await _spotifyService.SkipToNext();
+                    // Skip using the appropriate service
+                    if (skippedSong.SourcePlatform == "Spotify" && _spotifyService.IsConnected)
+                    {
+                        await _spotifyService.SkipToNext();
+                    }
+                    else if (skippedSong.SourcePlatform == "YouTube" && _youtubeMusicService.IsConnected)
+                    {
+                        await _youtubeMusicService.SkipToNext();
+                    }
                     
                     _twitchService.SendChatMessage($"⏭️ Skipped: {skippedSong.Title} by {skippedSong.Artist}");
                     
@@ -224,12 +280,33 @@ namespace EZStreamer.Services
         {
             try
             {
+                var results = new List<SongRequest>();
+                var settings = _settingsService.LoadSettings();
+
+                // Search both services if available
                 if (_spotifyService.IsConnected)
                 {
-                    return await _spotifyService.SearchSongs(query, "System", limit);
+                    var spotifyResults = await _spotifyService.SearchSongs(query, "System", limit);
+                    results.AddRange(spotifyResults);
                 }
-                
-                return new List<SongRequest>();
+
+                if (_youtubeMusicService.IsConnected)
+                {
+                    var youtubeResults = await _youtubeMusicService.SearchSongs(query, "System", limit);
+                    results.AddRange(youtubeResults);
+                }
+
+                // Sort by preferred source
+                if (settings.PreferredMusicSource == "Spotify")
+                {
+                    results = results.OrderBy(r => r.SourcePlatform == "Spotify" ? 0 : 1).Take(limit).ToList();
+                }
+                else
+                {
+                    results = results.OrderBy(r => r.SourcePlatform == "YouTube" ? 0 : 1).Take(limit).ToList();
+                }
+
+                return results;
             }
             catch (Exception ex)
             {
@@ -242,14 +319,23 @@ namespace EZStreamer.Services
         {
             try
             {
+                SongRequest currentSong = null;
+
+                // Check both services for currently playing song
                 if (_spotifyService.IsConnected)
                 {
-                    var currentSong = await _spotifyService.GetCurrentSongInfo();
-                    if (currentSong != null && (_currentSong == null || _currentSong.SourceId != currentSong.SourceId))
-                    {
-                        _currentSong = currentSong;
-                        SongStarted?.Invoke(this, currentSong);
-                    }
+                    currentSong = await _spotifyService.GetCurrentSongInfo();
+                }
+
+                if (currentSong == null && _youtubeMusicService.IsConnected)
+                {
+                    currentSong = await _youtubeMusicService.GetCurrentSongInfo();
+                }
+
+                if (currentSong != null && (_currentSong == null || _currentSong.SourceId != currentSong.SourceId))
+                {
+                    _currentSong = currentSong;
+                    SongStarted?.Invoke(this, currentSong);
                 }
             }
             catch (Exception ex)
@@ -320,6 +406,25 @@ namespace EZStreamer.Services
             }
         }
 
+        private void OnYouTubeTrackStarted(object sender, SongRequest song)
+        {
+            _currentSong = song;
+            SongStarted?.Invoke(this, song);
+        }
+
+        private async void OnYouTubeTrackEnded(object sender, SongRequest song)
+        {
+            if (_currentSong != null && _currentSong.Id == song.Id)
+            {
+                _currentSong.Status = SongRequestStatus.Completed;
+                SongCompleted?.Invoke(this, _currentSong);
+                _currentSong = null;
+
+                // Auto-play next song
+                await ProcessQueue();
+            }
+        }
+
         #endregion
 
         public void Dispose()
@@ -328,6 +433,8 @@ namespace EZStreamer.Services
             _twitchService.ChannelPointRedemption -= OnChannelPointRedemption;
             _spotifyService.TrackStarted -= OnSpotifyTrackStarted;
             _spotifyService.TrackEnded -= OnSpotifyTrackEnded;
+            _youtubeMusicService.TrackStarted -= OnYouTubeTrackStarted;
+            _youtubeMusicService.TrackEnded -= OnYouTubeTrackEnded;
         }
     }
 }
