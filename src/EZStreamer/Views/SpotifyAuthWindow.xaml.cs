@@ -10,8 +10,8 @@ namespace EZStreamer.Views
     {
         private readonly ConfigurationService _configService;
         private string _clientId;
-        // Updated to use HTTPS redirect URI as required by Spotify
-        private const string REDIRECT_URI = "https://eladser.github.io/ezstreamer/auth/spotify/callback";
+        // Use localhost with HTTPS for local development - Spotify supports this
+        private const string REDIRECT_URI = "https://localhost:3000/auth/spotify/callback";
         private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private";
 
         public string AccessToken { get; private set; }
@@ -62,7 +62,7 @@ namespace EZStreamer.Views
                 "Would you like to configure it now?\\n\\n" +
                 "You can get a Client ID from the Spotify Developer Dashboard:\\n" +
                 "https://developer.spotify.com/dashboard\\n\\n" +
-                "IMPORTANT: Use this redirect URI in your Spotify app:\\n" +
+                "Use this redirect URI in your Spotify app:\\n" +
                 REDIRECT_URI,
                 "Configuration Required",
                 MessageBoxButton.YesNo,
