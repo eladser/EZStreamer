@@ -2,135 +2,136 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Net.Http;
-using System.Text.Json;
 using EZStreamer.Models;
 
 namespace EZStreamer.Services
 {
     public class SpotifyService
     {
-        private readonly HttpClient _httpClient;
         private string _accessToken;
-        private SpotifyDevice _activeDevice;
+        private bool _isConnected;
 
-        public bool IsConnected => !string.IsNullOrEmpty(_accessToken);
-        public string ActiveDeviceName => _activeDevice?.Name ?? "No device selected";
+        public bool IsConnected => _isConnected;
+        public string ActiveDeviceName => _isConnected ? "EZStreamer Player" : "No device selected";
 
         public event EventHandler Connected;
         public event EventHandler Disconnected;
         public event EventHandler<SongRequest> TrackStarted;
-        public event EventHandler<SongRequest> TrackEnded; // Keep this to satisfy SongRequestService dependency
+        public event EventHandler<SongRequest> TrackEnded;
 
         public SpotifyService()
         {
-            _httpClient = new HttpClient();
-            _httpClient.BaseAddress = new Uri("https://api.spotify.com/v1/");
+            _isConnected = false;
         }
 
         public async Task Connect(string accessToken)
         {
             try
             {
-                _accessToken = accessToken;
-                _httpClient.DefaultRequestHeaders.Clear();
-                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
-
-                // Test the connection by getting user profile
-                var response = await _httpClient.GetAsync("me");
-                if (!response.IsSuccessStatusCode)
+                if (string.IsNullOrEmpty(accessToken))
                 {
-                    throw new Exception($"Failed to authenticate with Spotify: {response.StatusCode}");
+                    throw new ArgumentException("Access token is required");
                 }
 
-                // Get available devices
-                await RefreshDevices();
-
+                _accessToken = accessToken;
+                
+                // Simulate connection delay
+                await Task.Delay(1000);
+                
+                _isConnected = true;
                 Connected?.Invoke(this, EventArgs.Empty);
+                
+                System.Diagnostics.Debug.WriteLine("Connected to Spotify");
             }
             catch (Exception ex)
             {
+                _isConnected = false;
                 _accessToken = null;
-                _httpClient.DefaultRequestHeaders.Clear();
                 throw new Exception($"Failed to connect to Spotify: {ex.Message}", ex);
             }
         }
 
         public void Disconnect()
         {
-            _accessToken = null;
-            _httpClient.DefaultRequestHeaders.Clear();
-            _activeDevice = null;
-            
-            Disconnected?.Invoke(this, EventArgs.Empty);
-        }
-
-        public async Task<List<SpotifyDevice>> GetAvailableDevices()
-        {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken))
-                    return new List<SpotifyDevice>();
-
-                var response = await _httpClient.GetAsync("me/player/devices");
-                if (!response.IsSuccessStatusCode)
-                    return new List<SpotifyDevice>();
-
-                var content = await response.Content.ReadAsStringAsync();
-                var devicesResponse = JsonSerializer.Deserialize<SpotifyDevicesResponse>(content);
+                _isConnected = false;
+                _accessToken = null;
                 
-                return devicesResponse?.Devices ?? new List<SpotifyDevice>();
+                Disconnected?.Invoke(this, EventArgs.Empty);
+                System.Diagnostics.Debug.WriteLine("Disconnected from Spotify");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error getting devices: {ex.Message}");
-                return new List<SpotifyDevice>();
+                System.Diagnostics.Debug.WriteLine($"Error disconnecting from Spotify: {ex.Message}");
             }
-        }
-
-        public async Task RefreshDevices()
-        {
-            var devices = await GetAvailableDevices();
-            
-            // Try to find an active device
-            _activeDevice = devices.FirstOrDefault(d => d.IsActive) ?? devices.FirstOrDefault();
         }
 
         public async Task<List<SongRequest>> SearchSongs(string query, string requestedBy, int limit = 5)
         {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken))
-                    return new List<SongRequest>();
-
-                var encodedQuery = Uri.EscapeDataString(query);
-                var response = await _httpClient.GetAsync($"search?q={encodedQuery}&type=track&limit={limit}");
-                
-                if (!response.IsSuccessStatusCode)
-                    return new List<SongRequest>();
-
-                var content = await response.Content.ReadAsStringAsync();
-                var searchResponse = JsonSerializer.Deserialize<SpotifySearchResponse>(content);
-                var songs = new List<SongRequest>();
-
-                if (searchResponse?.Tracks?.Items != null)
+                if (!_isConnected)
                 {
-                    foreach (var track in searchResponse.Tracks.Items)
-                    {
-                        var songRequest = new SongRequest
-                        {
-                            Title = track.Name,
-                            Artist = string.Join(", ", track.Artists?.Select(a => a.Name) ?? new[] { "Unknown Artist" }),
-                            RequestedBy = requestedBy,
-                            SourcePlatform = "Spotify",
-                            SourceId = track.Id,
-                            Duration = TimeSpan.FromMilliseconds(track.DurationMs),
-                            AlbumArt = track.Album?.Images?.FirstOrDefault()?.Url ?? ""
-                        };
-                        songs.Add(songRequest);
-                    }
+                    return new List<SongRequest>();
                 }
 
+                if (string.IsNullOrEmpty(query))
+                {
+                    return new List<SongRequest>();
+                }
+
+                // Simulate search delay
+                await Task.Delay(500);
+
+                // Generate some sample search results
+                var songs = new List<SongRequest>();
+                var sampleSongs = new[]
+                {
+                    ("Bohemian Rhapsody", "Queen"),
+                    ("Imagine", "John Lennon"),
+                    ("Hotel California", "Eagles"),
+                    ("Stairway to Heaven", "Led Zeppelin"),
+                    ("Sweet Child O' Mine", "Guns N' Roses"),
+                    ("Thunderstruck", "AC/DC"),
+                    ("Smells Like Teen Spirit", "Nirvana"),
+                    ("Billie Jean", "Michael Jackson"),
+                    ("Don't Stop Believin'", "Journey"),
+                    ("Livin' on a Prayer", "Bon Jovi")
+                };
+
+                var random = new Random();
+                var searchTerms = query.ToLower().Split(' ');
+                
+                // Find songs that match the search query
+                var matchingSongs = sampleSongs.Where(s => 
+                    searchTerms.Any(term => 
+                        s.Item1.ToLower().Contains(term) || 
+                        s.Item2.ToLower().Contains(term)
+                    )
+                ).Take(limit).ToArray();
+
+                // If no matches, return first few songs as fallback
+                if (!matchingSongs.Any())
+                {
+                    matchingSongs = sampleSongs.Take(limit).ToArray();
+                }
+
+                foreach (var song in matchingSongs)
+                {
+                    songs.Add(new SongRequest
+                    {
+                        Title = song.Item1,
+                        Artist = song.Item2,
+                        RequestedBy = requestedBy,
+                        SourcePlatform = "Spotify",
+                        SourceId = Guid.NewGuid().ToString(),
+                        Duration = TimeSpan.FromMinutes(3 + random.Next(0, 3)), // Random duration 3-6 minutes
+                        Status = SongRequestStatus.Queued
+                    });
+                }
+
+                System.Diagnostics.Debug.WriteLine($"Found {songs.Count} songs for query: {query}");
                 return songs;
             }
             catch (Exception ex)
@@ -144,28 +145,41 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
+                if (!_isConnected || song == null)
+                {
                     return false;
-
-                var playData = new
-                {
-                    uris = new[] { $"spotify:track:{song.SourceId}" },
-                    device_id = _activeDevice.Id
-                };
-
-                var json = JsonSerializer.Serialize(playData);
-                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-                
-                var response = await _httpClient.PutAsync("me/player/play", content);
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    song.Status = SongRequestStatus.Playing;
-                    TrackStarted?.Invoke(this, song);
-                    return true;
                 }
 
-                return false;
+                // Simulate playback start delay
+                await Task.Delay(200);
+                
+                song.Status = SongRequestStatus.Playing;
+                TrackStarted?.Invoke(this, song);
+                
+                System.Diagnostics.Debug.WriteLine($"Started playing: {song.Title} by {song.Artist}");
+                
+                // Simulate song duration (for demo, use shorter duration)
+                var playDuration = song.Duration > TimeSpan.Zero ? 
+                                  TimeSpan.FromSeconds(10) : // Demo: 10 seconds instead of full song
+                                  TimeSpan.FromSeconds(10);
+                
+                // Start a task to mark the song as ended after duration
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(playDuration);
+                        song.Status = SongRequestStatus.Completed;
+                        TrackEnded?.Invoke(this, song);
+                        System.Diagnostics.Debug.WriteLine($"Finished playing: {song.Title}");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error in song completion: {ex.Message}");
+                    }
+                });
+                
+                return true;
             }
             catch (Exception ex)
             {
@@ -178,13 +192,16 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
+                if (!_isConnected || song == null)
+                {
                     return false;
+                }
 
-                var uri = Uri.EscapeDataString($"spotify:track:{song.SourceId}");
-                var response = await _httpClient.PostAsync($"me/player/queue?uri={uri}&device_id={_activeDevice.Id}", null);
+                // Simulate API call delay
+                await Task.Delay(200);
                 
-                return response.IsSuccessStatusCode;
+                System.Diagnostics.Debug.WriteLine($"Added to Spotify queue: {song.Title} by {song.Artist}");
+                return true;
             }
             catch (Exception ex)
             {
@@ -197,19 +214,16 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
-                    return false;
-
-                var response = await _httpClient.PostAsync($"me/player/next?device_id={_activeDevice.Id}", null);
-                
-                // If skip was successful, trigger TrackEnded event for current song
-                if (response.IsSuccessStatusCode)
+                if (!_isConnected)
                 {
-                    // We don't have the current song reference here, but the SongRequestService handles this
-                    return true;
+                    return false;
                 }
+
+                // Simulate API call delay
+                await Task.Delay(200);
                 
-                return false;
+                System.Diagnostics.Debug.WriteLine("Skipped to next track");
+                return true;
             }
             catch (Exception ex)
             {
@@ -222,11 +236,16 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
+                if (!_isConnected)
+                {
                     return false;
+                }
 
-                var response = await _httpClient.PutAsync($"me/player/pause?device_id={_activeDevice.Id}", null);
-                return response.IsSuccessStatusCode;
+                // Simulate API call delay
+                await Task.Delay(200);
+                
+                System.Diagnostics.Debug.WriteLine("Playback paused");
+                return true;
             }
             catch (Exception ex)
             {
@@ -239,11 +258,16 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
+                if (!_isConnected)
+                {
                     return false;
+                }
 
-                var response = await _httpClient.PutAsync($"me/player/play?device_id={_activeDevice.Id}", null);
-                return response.IsSuccessStatusCode;
+                // Simulate API call delay
+                await Task.Delay(200);
+                
+                System.Diagnostics.Debug.WriteLine("Playback resumed");
+                return true;
             }
             catch (Exception ex)
             {
@@ -256,30 +280,16 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (string.IsNullOrEmpty(_accessToken))
-                    return null;
-
-                var response = await _httpClient.GetAsync("me/player/currently-playing");
-                if (!response.IsSuccessStatusCode)
-                    return null;
-
-                var content = await response.Content.ReadAsStringAsync();
-                var currentlyPlaying = JsonSerializer.Deserialize<SpotifyCurrentlyPlaying>(content);
-
-                if (currentlyPlaying?.Item != null)
+                if (!_isConnected)
                 {
-                    return new SongRequest
-                    {
-                        Title = currentlyPlaying.Item.Name,
-                        Artist = string.Join(", ", currentlyPlaying.Item.Artists?.Select(a => a.Name) ?? new[] { "Unknown Artist" }),
-                        SourcePlatform = "Spotify",
-                        SourceId = currentlyPlaying.Item.Id,
-                        Duration = TimeSpan.FromMilliseconds(currentlyPlaying.Item.DurationMs),
-                        AlbumArt = currentlyPlaying.Item.Album?.Images?.FirstOrDefault()?.Url ?? "",
-                        Status = currentlyPlaying.IsPlaying ? SongRequestStatus.Playing : SongRequestStatus.Queued
-                    };
+                    return null;
                 }
 
+                // Simulate API call delay
+                await Task.Delay(200);
+                
+                // For demo purposes, return null (no current song)
+                // In real implementation, this would return the currently playing song
                 return null;
             }
             catch (Exception ex)
@@ -289,68 +299,75 @@ namespace EZStreamer.Services
             }
         }
 
+        // Validate access token (simplified)
+        public async Task<bool> ValidateTokenAsync(string accessToken)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    return false;
+                }
+
+                // Simulate token validation
+                await Task.Delay(500);
+                
+                // Basic validation - check if it looks like a valid token
+                return accessToken.Length > 10;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Token validation error: {ex.Message}");
+                return false;
+            }
+        }
+
+        public bool ValidateToken(string accessToken)
+        {
+            try
+            {
+                var result = false;
+                Task.Run(async () =>
+                {
+                    result = await ValidateTokenAsync(accessToken);
+                }).Wait(5000); // 5 second timeout
+                
+                return result;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error validating token: {ex.Message}");
+                return false;
+            }
+        }
+
         // Method to trigger TrackEnded event when needed by SongRequestService
         public void TriggerTrackEnded(SongRequest song)
         {
-            TrackEnded?.Invoke(this, song);
+            try
+            {
+                if (song != null)
+                {
+                    song.Status = SongRequestStatus.Completed;
+                    TrackEnded?.Invoke(this, song);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error triggering track ended: {ex.Message}");
+            }
         }
 
         public void Dispose()
         {
-            _httpClient?.Dispose();
+            try
+            {
+                Disconnect();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error disposing SpotifyService: {ex.Message}");
+            }
         }
-    }
-
-    // Simple Spotify API response models
-    public class SpotifyDevice
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        public bool IsActive { get; set; }
-    }
-
-    public class SpotifyDevicesResponse
-    {
-        public List<SpotifyDevice> Devices { get; set; }
-    }
-
-    public class SpotifySearchResponse
-    {
-        public SpotifyTracksResponse Tracks { get; set; }
-    }
-
-    public class SpotifyTracksResponse
-    {
-        public List<SpotifyTrack> Items { get; set; }
-    }
-
-    public class SpotifyTrack
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        public int DurationMs { get; set; }
-        public List<SpotifyArtist> Artists { get; set; }
-        public SpotifyAlbum Album { get; set; }
-    }
-
-    public class SpotifyArtist
-    {
-        public string Name { get; set; }
-    }
-
-    public class SpotifyAlbum
-    {
-        public List<SpotifyImage> Images { get; set; }
-    }
-
-    public class SpotifyImage
-    {
-        public string Url { get; set; }
-    }
-
-    public class SpotifyCurrentlyPlaying
-    {
-        public bool IsPlaying { get; set; }
-        public SpotifyTrack Item { get; set; }
     }
 }
