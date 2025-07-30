@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EZStreamer - Spotify Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #1DB954, #191414);
+            color: white;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .logo {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            color: #1DB954;
+        }
+        
+        .status {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+        }
+        
+        .success {
+            color: #1DB954;
+        }
+        
+        .error {
+            color: #ff4444;
+        }
+        
+        .token-display {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        
+        .instructions {
+            margin-top: 20px;
+            color: #ccc;
+            font-size: 0.9em;
+        }
+        
+        .copy-button {
+            background: #1DB954;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+            font-size: 1em;
+        }
+        
+        .copy-button:hover {
+            background: #1ed760;
+        }
+        
+        .copy-button:active {
+            background: #169c46;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🎵 EZStreamer</div>
+        <div id="status" class="status">Processing Spotify authentication...</div>
+        <div id="content"></div>
+        <div class="instructions">
+            <p>This page will automatically close once authentication is complete.</p>
+            <p>If it doesn't close automatically, you can close this window manually.</p>
+        </div>
+    </div>
+
+    <script>
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        function getHashParameter(name) {
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            return params.get(name);
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                alert('Token copied to clipboard!');
+            }, function(err) {
+                console.error('Could not copy text: ', err);
+                // Fallback for older browsers
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    alert('Token copied to clipboard!');
+                } catch (err) {
+                    alert('Failed to copy token. Please copy manually.');
+                }
+                document.body.removeChild(textArea);
+            });
+        }
+
+        function handleCallback() {
+            const statusElement = document.getElementById('status');
+            const contentElement = document.getElementById('content');
+
+            // Check for access token in the URL hash (OAuth implicit flow)
+            const accessToken = getHashParameter('access_token');
+            const error = getHashParameter('error');
+            const errorDescription = getHashParameter('error_description');
+
+            // Check for authorization code in URL params (OAuth authorization code flow)
+            const authCode = getUrlParameter('code');
+            const urlError = getUrlParameter('error');
+
+            if (error || urlError) {
+                statusElement.className = 'status error';
+                statusElement.textContent = 'Authentication Failed';
+                contentElement.innerHTML = `
+                    <p><strong>Error:</strong> ${error || urlError}</p>
+                    <p><strong>Description:</strong> ${errorDescription || 'Unknown error occurred'}</p>
+                    <p>Please try again or contact support if the issue persists.</p>
+                `;
+                return;
+            }
+
+            if (accessToken) {
+                statusElement.className = 'status success';
+                statusElement.textContent = '✅ Authentication Successful!';
+                contentElement.innerHTML = `
+                    <p>Your Spotify access token has been generated successfully.</p>
+                    <div class="token-display" id="tokenDisplay">${accessToken}</div>
+                    <button class="copy-button" onclick="copyToClipboard('${accessToken}')">
+                        📋 Copy Token
+                    </button>
+                    <p><strong>Next steps:</strong></p>
+                    <ol style="text-align: left; max-width: 400px; margin: 0 auto;">
+                        <li>Copy the token above</li>
+                        <li>Return to EZStreamer</li>
+                        <li>Choose "Manual Token" option</li>
+                        <li>Paste this token</li>
+                        <li>Close this window</li>
+                    </ol>
+                `;
+
+                // Try to communicate with the parent window or opener
+                try {
+                    if (window.opener && !window.opener.closed) {
+                        window.opener.postMessage({
+                            type: 'spotify_auth_success',
+                            access_token: accessToken
+                        }, '*');
+                        
+                        // Close this window after a delay
+                        setTimeout(() => {
+                            window.close();
+                        }, 2000);
+                    }
+                } catch (e) {
+                    console.log('Could not communicate with parent window:', e);
+                }
+
+                return;
+            }
+
+            if (authCode) {
+                statusElement.className = 'status success';
+                statusElement.textContent = '✅ Authorization Received!';
+                contentElement.innerHTML = `
+                    <p>Authorization code received successfully.</p>
+                    <div class="token-display">${authCode}</div>
+                    <button class="copy-button" onclick="copyToClipboard('${authCode}')">
+                        📋 Copy Authorization Code
+                    </button>
+                    <p><em>Note: This is an authorization code, not an access token. You'll need to exchange it for an access token using your client secret.</em></p>
+                `;
+                return;
+            }
+
+            // No token or code found
+            statusElement.className = 'status error';
+            statusElement.textContent = '❌ No Authentication Data Found';
+            contentElement.innerHTML = `
+                <p>No access token or authorization code was found in the URL.</p>
+                <p>This usually means the authentication flow was not completed properly.</p>
+                <p><strong>What to do:</strong></p>
+                <ul style="text-align: left;">
+                    <li>Close this window</li>
+                    <li>Try the authentication process again</li>
+                    <li>If problems persist, use the manual token option in EZStreamer</li>
+                </ul>
+            `;
+        }
+
+        // Run the callback handler when the page loads
+        document.addEventListener('DOMContentLoaded', handleCallback);
+    </script>
+</body>
+</html>
+</html>
