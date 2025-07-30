@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using OBSWebsocketDotNet;
 using OBSWebsocketDotNet.Types;
-using OBSWebsocketDotNet.Types.Events;
 using Microsoft.Extensions.Logging;
 
 namespace EZStreamer.Services
@@ -201,7 +200,7 @@ namespace EZStreamer.Services
             }
         }
 
-        public async Task<GetSceneListResponse> GetScenes()
+        public async Task<object> GetScenes()
         {
             try
             {
