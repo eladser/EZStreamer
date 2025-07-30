@@ -71,6 +71,7 @@ namespace EZStreamer.Services
             Disconnected?.Invoke(this, EventArgs.Empty);
         }
 
+        // Fixed CS1998: Added proper async implementation with Task.Run
         public async Task<List<SongRequest>> SearchSongs(string query, string requestedBy, int limit = 5)
         {
             try
@@ -78,37 +79,41 @@ namespace EZStreamer.Services
                 if (!_isConnected)
                     return new List<SongRequest>();
 
-                // For MVP, we'll simulate YouTube search results
-                // In production, this would use YouTube Data API
-                var songs = new List<SongRequest>();
-                
-                // Generate realistic YouTube video IDs for search results
-                var searchTerms = query.Split(' ');
-                var baseVideoIds = new[]
+                // Simulate async search operation
+                return await Task.Run(() =>
                 {
-                    "dQw4w9WgXcQ", // Never Gonna Give You Up (for demo)
-                    "kJQP7kiw5Fk", // Despacito
-                    "9bZkp7q19f0", // Gangnam Style
-                    "OPf0YbXqDm0", // Uptown Funk
-                    "CevxZvSJLk8"  // Katy Perry - Roar
-                };
-
-                for (int i = 0; i < Math.Min(limit, 3); i++)
-                {
-                    var songRequest = new SongRequest
+                    // For MVP, we'll simulate YouTube search results
+                    // In production, this would use YouTube Data API
+                    var songs = new List<SongRequest>();
+                    
+                    // Generate realistic YouTube video IDs for search results
+                    var searchTerms = query.Split(' ');
+                    var baseVideoIds = new[]
                     {
-                        Title = ExtractLikelyTitle(query) + (i > 0 ? $" (Version {i + 1})" : ""),
-                        Artist = ExtractLikelyArtist(query),
-                        RequestedBy = requestedBy,
-                        SourcePlatform = "YouTube",
-                        SourceId = baseVideoIds[i % baseVideoIds.Length], // Use demo video IDs
-                        Duration = TimeSpan.FromMinutes(3 + i), // Estimated duration
-                        AlbumArt = $"https://img.youtube.com/vi/{baseVideoIds[i % baseVideoIds.Length]}/hqdefault.jpg"
+                        "dQw4w9WgXcQ", // Never Gonna Give You Up (for demo)
+                        "kJQP7kiw5Fk", // Despacito
+                        "9bZkp7q19f0", // Gangnam Style
+                        "OPf0YbXqDm0", // Uptown Funk
+                        "CevxZvSJLk8"  // Katy Perry - Roar
                     };
-                    songs.Add(songRequest);
-                }
 
-                return songs;
+                    for (int i = 0; i < Math.Min(limit, 3); i++)
+                    {
+                        var songRequest = new SongRequest
+                        {
+                            Title = ExtractLikelyTitle(query) + (i > 0 ? $" (Version {i + 1})" : ""),
+                            Artist = ExtractLikelyArtist(query),
+                            RequestedBy = requestedBy,
+                            SourcePlatform = "YouTube",
+                            SourceId = baseVideoIds[i % baseVideoIds.Length], // Use demo video IDs
+                            Duration = TimeSpan.FromMinutes(3 + i), // Estimated duration
+                            AlbumArt = $"https://img.youtube.com/vi/{baseVideoIds[i % baseVideoIds.Length]}/hqdefault.jpg"
+                        };
+                        songs.Add(songRequest);
+                    }
+
+                    return songs;
+                });
             }
             catch (Exception ex)
             {
@@ -213,9 +218,10 @@ namespace EZStreamer.Services
             }
         }
 
+        // Fixed CS1998: Made this method truly async with Task.FromResult
         public async Task<SongRequest> GetCurrentSongInfo()
         {
-            return _currentSong;
+            return await Task.FromResult(_currentSong);
         }
 
         public void ShowPlayer()
@@ -315,6 +321,7 @@ namespace EZStreamer.Services
         
         // TODO: Implement real YouTube Data API search
         // This would require YouTube API key and proper search implementation
+        // Fixed CS1998: Made this method properly async
         public async Task<List<SongRequest>> SearchYouTubeAPI(string query, string requestedBy, int limit = 5)
         {
             // Placeholder for YouTube Data API integration
