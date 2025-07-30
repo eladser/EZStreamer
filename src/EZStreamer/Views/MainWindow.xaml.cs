@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -55,6 +56,7 @@ namespace EZStreamer.Views
             LoadSettings();
             SetupEventHandlers();
             UpdateStatusIndicators();
+            UpdateQueueDisplay();
             
             StatusText.Text = "Welcome to EZStreamer! Connect your accounts to get started.";
             
@@ -71,7 +73,8 @@ namespace EZStreamer.Views
                 "Welcome to EZStreamer!\n\n" +
                 "This appears to be your first time running the application. " +
                 "You'll need to configure your API credentials to get started.\n\n" +
-                "Go to the Settings tab to connect your Twitch and Spotify accounts.",
+                "Go to the Settings tab to connect your Twitch and Spotify accounts.\n\n" +
+                "For now, you can test the functionality using the test controls in the Now Playing tab.",
                 "Welcome to EZStreamer",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -80,44 +83,6 @@ namespace EZStreamer.Views
         private void LoadSettings()
         {
             var settings = _settingsService.LoadSettings();
-            
-            // Apply settings to UI
-            EnableChatCommandsCheckBox.IsChecked = settings.EnableChatCommands;
-            EnableChannelPointsCheckBox.IsChecked = settings.EnableChannelPoints;
-            MaxQueueLengthTextBox.Text = settings.MaxQueueLength.ToString();
-            ChatCommandTextBox.Text = settings.ChatCommand;
-            RequestCooldownTextBox.Text = settings.SongRequestCooldown.ToString();
-            
-            // Music settings
-            PreferredMusicSourceComboBox.SelectedIndex = settings.PreferredMusicSource == "Spotify" ? 0 : 1;
-            AutoPlayNextSongCheckBox.IsChecked = settings.AutoPlayNextSong;
-            ShowYouTubePlayerCheckBox.IsChecked = true; // Default for new setting
-            
-            // OBS settings
-            OBSServerTextBox.Text = settings.OBSServerIP;
-            OBSPortTextBox.Text = settings.OBSServerPort.ToString();
-            OBSAutoConnectCheckBox.IsChecked = settings.OBSAutoConnect;
-            OBSSceneSwitchingCheckBox.IsChecked = settings.OBSSceneSwitchingEnabled;
-            
-            // Overlay settings
-            var overlayThemeIndex = settings.OverlayTheme switch
-            {
-                "Minimal" => 1,
-                "Neon" => 2,
-                "Classic" => 3,
-                _ => 0
-            };
-            OverlayThemeComboBox.SelectedIndex = overlayThemeIndex;
-            OverlayShowAlbumArtCheckBox.IsChecked = settings.OverlayShowAlbumArt;
-            OverlayShowRequesterCheckBox.IsChecked = settings.OverlayShowRequester;
-            OverlayDurationTextBox.Text = settings.OverlayDisplayDuration.ToString();
-            
-            // Advanced settings
-            AllowExplicitContentCheckBox.IsChecked = settings.AllowExplicitContent;
-            RequireFollowersOnlyCheckBox.IsChecked = settings.RequireFollowersOnly;
-            RequireSubscribersOnlyCheckBox.IsChecked = settings.RequireSubscribersOnly;
-            MinDurationTextBox.Text = settings.MinStreamDuration.ToString();
-            MaxDurationTextBox.Text = settings.MaxStreamDuration.ToString();
             
             // Try to connect services if tokens exist
             if (!string.IsNullOrEmpty(settings.TwitchAccessToken))
@@ -158,6 +123,9 @@ namespace EZStreamer.Views
             _obsService.Connected += OnOBSConnected;
             _obsService.Disconnected += OnOBSDisconnected;
             _obsService.ErrorOccurred += OnOBSError;
+            
+            // Collection change events
+            SongQueue.CollectionChanged += (s, e) => UpdateQueueDisplay();
         }
 
         private void UpdateStatusIndicators()
@@ -167,31 +135,22 @@ namespace EZStreamer.Views
             TwitchStatusIndicator.Style = twitchConnected ? 
                 (Style)FindResource("ConnectedStatus") : 
                 (Style)FindResource("DisconnectedStatus");
-            TwitchStatusSettings.Style = TwitchStatusIndicator.Style;
-            TwitchConnectButton.Content = twitchConnected ? "Disconnect" : "Connect";
             
             // Update Spotify status
             var spotifyConnected = _spotifyService.IsConnected;
             SpotifyStatusIndicator.Style = spotifyConnected ? 
                 (Style)FindResource("ConnectedStatus") : 
                 (Style)FindResource("DisconnectedStatus");
-            SpotifyStatusSettings.Style = SpotifyStatusIndicator.Style;
-            SpotifyConnectButton.Content = spotifyConnected ? "Disconnect" : "Connect";
+        }
+
+        private void UpdateQueueDisplay()
+        {
+            var count = SongQueue.Count;
+            QueueCountText.Text = count == 0 ? "Empty" : 
+                                  count == 1 ? "1 song" : 
+                                  $"{count} songs";
             
-            // Update YouTube status
-            var youtubeConnected = _youtubeMusicService.IsConnected;
-            YouTubeStatusSettings.Style = youtubeConnected ? 
-                (Style)FindResource("ConnectedStatus") : 
-                (Style)FindResource("DisconnectedStatus");
-            YouTubeConnectButton.Content = youtubeConnected ? "Disconnect" : "Connect";
-            
-            // Update OBS status
-            var obsConnected = _obsService.IsConnected;
-            OBSStatusIndicator.Style = obsConnected ? 
-                (Style)FindResource("ConnectedStatus") : 
-                (Style)FindResource("DisconnectedStatus");
-            OBSStatusText.Text = obsConnected ? $"Connected ({_obsService.ConnectionInfo})" : "Disconnected";
-            OBSConnectButton.Content = obsConnected ? "Disconnect" : "Connect to OBS";
+            EmptyQueueMessage.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         #region Event Handlers
@@ -280,7 +239,6 @@ namespace EZStreamer.Views
         {
             Dispatcher.Invoke(() =>
             {
-                UpdateStatusIndicators();
                 StatusText.Text = "YouTube Music player ready!";
             });
         }
@@ -289,7 +247,6 @@ namespace EZStreamer.Views
         {
             Dispatcher.Invoke(() =>
             {
-                UpdateStatusIndicators();
                 StatusText.Text = "YouTube Music disconnected.";
             });
         }
@@ -298,7 +255,6 @@ namespace EZStreamer.Views
         {
             Dispatcher.Invoke(() =>
             {
-                UpdateStatusIndicators();
                 StatusText.Text = "Connected to OBS! Scene switching available.";
             });
         }
@@ -307,7 +263,6 @@ namespace EZStreamer.Views
         {
             Dispatcher.Invoke(() =>
             {
-                UpdateStatusIndicators();
                 StatusText.Text = "Disconnected from OBS.";
             });
         }
@@ -324,90 +279,8 @@ namespace EZStreamer.Views
 
         #region Button Click Handlers
 
-        private void ConnectTwitch_Click(object sender, RoutedEventArgs e)
-        {
-            if (_twitchService.IsConnected)
-            {
-                _twitchService.Disconnect();
-            }
-            else
-            {
-                var authWindow = new TwitchAuthWindow();
-                if (authWindow.ShowDialog() == true)
-                {
-                    ConnectTwitchWithToken(authWindow.AccessToken);
-                }
-            }
-        }
-
-        private void ConnectSpotify_Click(object sender, RoutedEventArgs e)
-        {
-            if (_spotifyService.IsConnected)
-            {
-                _spotifyService.Disconnect();
-            }
-            else
-            {
-                var authWindow = new SpotifyAuthWindow();
-                if (authWindow.ShowDialog() == true)
-                {
-                    ConnectSpotifyWithToken(authWindow.AccessToken);
-                }
-            }
-        }
-
-        private void ConnectYouTube_Click(object sender, RoutedEventArgs e)
-        {
-            if (_youtubeMusicService.IsConnected)
-            {
-                _youtubeMusicService.Disconnect();
-            }
-            else
-            {
-                ConnectYouTube();
-            }
-        }
-
-        private async void ConnectOBS_Click(object sender, RoutedEventArgs e)
-        {
-            if (_obsService.IsConnected)
-            {
-                await _obsService.DisconnectAsync();
-            }
-            else
-            {
-                var serverIP = OBSServerTextBox.Text;
-                var serverPort = int.TryParse(OBSPortTextBox.Text, out int port) ? port : 4455;
-                var password = OBSPasswordBox.Password;
-
-                var success = await _obsService.ConnectAsync(serverIP, serverPort, password);
-                if (!success)
-                {
-                    MessageBox.Show("Failed to connect to OBS. Please check your settings.", "Connection Failed",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
-        }
-
-        private async void TestOBSConnection_Click(object sender, RoutedEventArgs e)
-        {
-            if (_obsService.IsConnected)
-            {
-                var success = await _obsService.TestConnection();
-                MessageBox.Show(success ? "OBS connection is working!" : "OBS connection test failed.",
-                    "Connection Test", MessageBoxButton.OK, 
-                    success ? MessageBoxImage.Information : MessageBoxImage.Warning);
-            }
-            else
-            {
-                MessageBox.Show("Please connect to OBS first.", "Not Connected",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-        }
-
         private void SkipSong_Click(object sender, RoutedEventArgs e)
         {
-            // Fixed CS4014: Properly handle the async call
             Task.Run(async () =>
             {
                 try
@@ -434,8 +307,15 @@ namespace EZStreamer.Views
                 return;
             }
             
-            _twitchService.UpdateStreamInfo(title, category);
-            StatusText.Text = "Stream information updated.";
+            try
+            {
+                _twitchService.UpdateStreamInfo(title, category);
+                StatusText.Text = "Stream information updated.";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Error updating stream info: {ex.Message}";
+            }
         }
 
         private void OpenOverlayFolder_Click(object sender, RoutedEventArgs e)
@@ -451,126 +331,139 @@ namespace EZStreamer.Views
             }
         }
 
-        private void PreviewOverlay_Click(object sender, RoutedEventArgs e)
-        {
-            // Create a test song for preview
-            var testSong = new SongRequest
-            {
-                Title = "Sample Song Title",
-                Artist = "Sample Artist",
-                RequestedBy = "TestViewer",
-                SourcePlatform = "Spotify"
-            };
-            
-            _overlayService.UpdateNowPlaying(testSong);
-            StatusText.Text = "Overlay preview updated with sample data.";
-        }
-
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            // Switch to settings tab (assuming it's the 4th tab)
-            var tabControl = (System.Windows.Controls.TabControl)FindName("TabControl");
-            if (tabControl != null && tabControl.Items.Count > 3)
-            {
-                tabControl.SelectedIndex = 3; // Settings tab
-            }
+            // Switch to settings tab
+            TabControl.SelectedIndex = 3; // Settings tab is the 4th tab (index 3)
         }
 
-        #endregion
-
-        #region Settings Event Handlers
-
-        private void PreferredMusicSource_Changed(object sender, SelectionChangedEventArgs e)
+        // New test functionality
+        private void AddTestSong_Click(object sender, RoutedEventArgs e)
         {
-            SaveCurrentSettings();
-        }
-
-        private void OverlayTheme_Changed(object sender, SelectionChangedEventArgs e)
-        {
-            if (OverlayThemeComboBox.SelectedItem is ComboBoxItem item)
+            try
             {
-                var theme = item.Tag.ToString();
-                _overlayService.CreateCustomOverlay(theme);
-                SaveCurrentSettings();
-            }
-        }
+                var title = TestSongTitleTextBox.Text.Trim();
+                var artist = TestSongArtistTextBox.Text.Trim();
+                var requester = TestRequesterTextBox.Text.Trim();
+                var platform = TestPlatformComboBox.SelectedIndex == 0 ? "Spotify" : "YouTube";
 
-        private void ResetSettings_Click(object sender, RoutedEventArgs e)
-        {
-            var result = MessageBox.Show(
-                "Are you sure you want to reset all settings to default values?\n\nThis action cannot be undone.",
-                "Reset Settings",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Yes)
-            {
-                _settingsService.ClearSettings();
-                LoadSettings();
-                StatusText.Text = "Settings reset to defaults.";
-            }
-        }
-
-        private void ExportSettings_Click(object sender, RoutedEventArgs e)
-        {
-            var saveDialog = new SaveFileDialog
-            {
-                Title = "Export Settings",
-                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
-                DefaultExt = "json",
-                FileName = "EZStreamerSettings.json"
-            };
-
-            if (saveDialog.ShowDialog() == true)
-            {
-                try
+                if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(artist))
                 {
-                    var settings = _settingsService.LoadSettings();
-                    // Remove sensitive data before export
-                    settings.TwitchAccessToken = "";
-                    settings.SpotifyAccessToken = "";
-                    
-                    var json = Newtonsoft.Json.JsonConvert.SerializeObject(settings, Newtonsoft.Json.Formatting.Indented);
-                    File.WriteAllText(saveDialog.FileName, json);
-                    
-                    StatusText.Text = "Settings exported successfully.";
+                    MessageBox.Show("Please enter both song title and artist.", "Missing Information",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
                 }
-                catch (Exception ex)
+
+                var testSong = new SongRequest
                 {
-                    MessageBox.Show($"Failed to export settings: {ex.Message}", "Export Failed",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                    Title = title,
+                    Artist = artist,
+                    RequestedBy = string.IsNullOrEmpty(requester) ? "TestUser" : requester,
+                    SourcePlatform = platform,
+                    Timestamp = DateTime.Now,
+                    Status = SongRequestStatus.Queued
+                };
+
+                SongQueue.Add(testSong);
+                RequestHistory.Insert(0, testSong);
+                
+                StatusText.Text = $"Test song added: {title} by {artist}";
+                
+                // Generate random suggestions for next test
+                var songSuggestions = new[]
+                {
+                    ("Bohemian Rhapsody", "Queen"),
+                    ("Imagine", "John Lennon"),
+                    ("Hotel California", "Eagles"),
+                    ("Stairway to Heaven", "Led Zeppelin"),
+                    ("Sweet Child O' Mine", "Guns N' Roses"),
+                    ("Thunderstruck", "AC/DC"),
+                    ("Smells Like Teen Spirit", "Nirvana"),
+                    ("Billie Jean", "Michael Jackson")
+                };
+                
+                var random = new Random();
+                var suggestion = songSuggestions[random.Next(songSuggestions.Length)];
+                TestSongTitleTextBox.Text = suggestion.Item1;
+                TestSongArtistTextBox.Text = suggestion.Item2;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error adding test song: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private void ImportSettings_Click(object sender, RoutedEventArgs e)
+        private void ClearQueue_Click(object sender, RoutedEventArgs e)
         {
-            var openDialog = new OpenFileDialog
+            try
             {
-                Title = "Import Settings",
-                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
-                DefaultExt = "json"
-            };
-
-            if (openDialog.ShowDialog() == true)
-            {
-                try
+                if (SongQueue.Count == 0)
                 {
-                    var json = File.ReadAllText(openDialog.FileName);
-                    var settings = Newtonsoft.Json.JsonConvert.DeserializeObject<AppSettings>(json);
+                    MessageBox.Show("Queue is already empty.", "Information",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var result = MessageBox.Show(
+                    $"Are you sure you want to clear all {SongQueue.Count} songs from the queue?",
+                    "Clear Queue",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    SongQueue.Clear();
+                    StatusText.Text = "Song queue cleared.";
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error clearing queue: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void PlaySongNow_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is Button button && button.Tag is SongRequest song)
+                {
+                    // Simulate playing the song
+                    OnSongStarted(this, song);
                     
-                    if (settings != null)
+                    // Move to top of queue if not already
+                    if (SongQueue.Contains(song))
                     {
-                        _settingsService.SaveSettings(settings);
-                        LoadSettings();
-                        StatusText.Text = "Settings imported successfully.";
+                        SongQueue.Remove(song);
+                        SongQueue.Insert(0, song);
                     }
+                    
+                    StatusText.Text = $"Now playing: {song.Title} by {song.Artist}";
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error playing song: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void RemoveFromQueue_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is Button button && button.Tag is SongRequest song)
                 {
-                    MessageBox.Show($"Failed to import settings: {ex.Message}", "Import Failed",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    SongQueue.Remove(song);
+                    StatusText.Text = $"Removed {song.Title} from queue.";
                 }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error removing song: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -639,64 +532,6 @@ namespace EZStreamer.Views
             }
         }
 
-        private void SaveCurrentSettings()
-        {
-            try
-            {
-                var settings = _settingsService.LoadSettings();
-                
-                // Update settings from UI
-                settings.EnableChatCommands = EnableChatCommandsCheckBox.IsChecked ?? true;
-                settings.EnableChannelPoints = EnableChannelPointsCheckBox.IsChecked ?? true;
-                settings.ChatCommand = ChatCommandTextBox.Text;
-                
-                if (int.TryParse(MaxQueueLengthTextBox.Text, out int maxQueue))
-                    settings.MaxQueueLength = maxQueue;
-                if (int.TryParse(RequestCooldownTextBox.Text, out int cooldown))
-                    settings.SongRequestCooldown = cooldown;
-                
-                // Music settings
-                settings.PreferredMusicSource = PreferredMusicSourceComboBox.SelectedIndex == 0 ? "Spotify" : "YouTube";
-                settings.AutoPlayNextSong = AutoPlayNextSongCheckBox.IsChecked ?? true;
-                
-                // OBS settings
-                settings.OBSServerIP = OBSServerTextBox.Text;
-                if (int.TryParse(OBSPortTextBox.Text, out int port))
-                    settings.OBSServerPort = port;
-                settings.OBSServerPassword = OBSPasswordBox.Password;
-                settings.OBSAutoConnect = OBSAutoConnectCheckBox.IsChecked ?? false;
-                settings.OBSSceneSwitchingEnabled = OBSSceneSwitchingCheckBox.IsChecked ?? false;
-                
-                // Overlay settings
-                settings.OverlayTheme = OverlayThemeComboBox.SelectedIndex switch
-                {
-                    1 => "Minimal",
-                    2 => "Neon", 
-                    3 => "Classic",
-                    _ => "Default"
-                };
-                settings.OverlayShowAlbumArt = OverlayShowAlbumArtCheckBox.IsChecked ?? true;
-                settings.OverlayShowRequester = OverlayShowRequesterCheckBox.IsChecked ?? true;
-                if (int.TryParse(OverlayDurationTextBox.Text, out int duration))
-                    settings.OverlayDisplayDuration = duration;
-                
-                // Advanced settings
-                settings.AllowExplicitContent = AllowExplicitContentCheckBox.IsChecked ?? true;
-                settings.RequireFollowersOnly = RequireFollowersOnlyCheckBox.IsChecked ?? false;
-                settings.RequireSubscribersOnly = RequireSubscribersOnlyCheckBox.IsChecked ?? false;
-                if (int.TryParse(MinDurationTextBox.Text, out int minDur))
-                    settings.MinStreamDuration = minDur;
-                if (int.TryParse(MaxDurationTextBox.Text, out int maxDur))
-                    settings.MaxStreamDuration = maxDur;
-                
-                _settingsService.SaveSettings(settings);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
-            }
-        }
-
         #endregion
 
         protected override void OnClosed(EventArgs e)
@@ -710,9 +545,6 @@ namespace EZStreamer.Views
         {
             try
             {
-                // Save settings before closing
-                SaveCurrentSettings();
-                
                 // Disconnect and dispose services properly
                 _twitchService?.Disconnect();
                 _spotifyService?.Disconnect();
@@ -720,7 +552,6 @@ namespace EZStreamer.Views
                 // Force close YouTube player window if it exists
                 if (_youtubeMusicService?.IsConnected == true)
                 {
-                    // Get the player window and force close it
                     var youtubeService = _youtubeMusicService as YouTubeMusicService;
                     if (youtubeService != null)
                     {
