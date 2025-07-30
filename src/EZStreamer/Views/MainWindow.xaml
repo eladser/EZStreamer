@@ -1,0 +1,354 @@
+<Window x:Class="EZStreamer.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        Title="EZStreamer" 
+        Height="800" 
+        Width="1200"
+        MinHeight="600"
+        MinWidth="800"
+        WindowStartupLocation="CenterScreen"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        TextElement.FontWeight="Regular"
+        TextElement.FontSize="13"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        Background="{DynamicResource MaterialDesignPaper}"
+        FontFamily="{DynamicResource MaterialDesignFont}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <materialDesign:Card Grid.Row="0" Margin="16,16,16,8" Padding="16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <materialDesign:PackIcon Kind="Music" Width="32" Height="32" Margin="0,0,16,0"/>
+                    <TextBlock Text="EZStreamer" FontSize="24" FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Connection Status -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                        <Ellipse x:Name="TwitchStatusIndicator" Style="{StaticResource DisconnectedStatus}"/>
+                        <TextBlock Text="Twitch" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                        
+                        <Ellipse x:Name="SpotifyStatusIndicator" Style="{StaticResource DisconnectedStatus}"/>
+                        <TextBlock Text="Spotify" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    
+                    <Button Style="{StaticResource MaterialDesignIconButton}" 
+                            ToolTip="Settings" 
+                            Click="SettingsButton_Click">
+                        <materialDesign:PackIcon Kind="Settings"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </materialDesign:Card>
+
+        <!-- Main Content -->
+        <TabControl Grid.Row="1" 
+                    Style="{StaticResource MaterialDesignTabControl}"
+                    Margin="16,0,16,8">
+            
+            <!-- Now Playing Tab -->
+            <TabItem Header="🎵 Now Playing">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16">
+                        <!-- Current Song Card -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Currently Playing" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <!-- Album Art Placeholder -->
+                                    <Border Grid.Column="0" 
+                                            Width="80" 
+                                            Height="80" 
+                                            Background="{DynamicResource MaterialDesignDivider}"
+                                            CornerRadius="4"
+                                            Margin="0,0,16,0">
+                                        <materialDesign:PackIcon Kind="Music" 
+                                                               Width="40" 
+                                                               Height="40"/>
+                                    </Border>
+                                    
+                                    <!-- Song Info -->
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock x:Name="CurrentSongTitle" 
+                                                 Text="No song playing" 
+                                                 FontSize="16" 
+                                                 FontWeight="Medium"/>
+                                        <TextBlock x:Name="CurrentSongArtist" 
+                                                 Text="Connect Spotify to get started" 
+                                                 Opacity="0.7"
+                                                 Margin="0,4,0,0"/>
+                                        <TextBlock x:Name="RequestedBy" 
+                                                 Text="" 
+                                                 Opacity="0.7"
+                                                 FontStyle="Italic"
+                                                 Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                    
+                                    <!-- Controls -->
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                        <Button Style="{StaticResource MaterialDesignIconButton}"
+                                                ToolTip="Skip Song"
+                                                Click="SkipSong_Click">
+                                            <materialDesign:PackIcon Kind="SkipNext"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- Song Queue -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Song Queue" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <ListBox x:Name="SongQueueList" 
+                                        MinHeight="200"
+                                        MaxHeight="300">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="Medium"/>
+                                                    <TextBlock Text="{Binding Artist}" Opacity="0.7"/>
+                                                    <TextBlock Text="{Binding RequestedBy}" 
+                                                             FontStyle="Italic" 
+                                                             Opacity="0.7"/>
+                                                </StackPanel>
+                                                
+                                                <Button Grid.Column="1" 
+                                                       Style="{StaticResource MaterialDesignIconButton}"
+                                                       ToolTip="Remove from Queue">
+                                                    <materialDesign:PackIcon Kind="Close"/>
+                                                </Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </materialDesign:Card>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Request History Tab -->
+            <TabItem Header="📋 Request History">
+                <materialDesign:Card Style="{StaticResource ContentCard}">
+                    <StackPanel>
+                        <TextBlock Text="Recent Song Requests" 
+                                 FontSize="18" 
+                                 FontWeight="Medium" 
+                                 Margin="0,0,0,16"/>
+                        
+                        <DataGrid x:Name="RequestHistoryGrid"
+                                 AutoGenerateColumns="False"
+                                 CanUserAddRows="False"
+                                 CanUserDeleteRows="False"
+                                 IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}"/>
+                                <DataGridTextColumn Header="Viewer" Binding="{Binding RequestedBy}"/>
+                                <DataGridTextColumn Header="Song" Binding="{Binding Title}"/>
+                                <DataGridTextColumn Header="Artist" Binding="{Binding Artist}"/>
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </materialDesign:Card>
+            </TabItem>
+
+            <!-- Stream Settings Tab -->
+            <TabItem Header="🎮 Stream Controls">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16">
+                        <!-- Stream Info -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Stream Information" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <TextBlock Grid.Row="0" Grid.Column="0" 
+                                             Text="Title:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,16,8"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" 
+                                           x:Name="StreamTitleTextBox"
+                                           Margin="0,0,16,8"/>
+                                    
+                                    <TextBlock Grid.Row="1" Grid.Column="0" 
+                                             Text="Category:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,16,8"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" 
+                                           x:Name="StreamCategoryTextBox"
+                                           Margin="0,0,16,8"/>
+                                    
+                                    <Button Grid.Row="0" Grid.Column="2" Grid.RowSpan="2"
+                                          Content="Update Stream Info"
+                                          Style="{StaticResource MaterialDesignRaisedButton}"
+                                          Click="UpdateStreamInfo_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- OBS Settings -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="OBS Integration" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <TextBlock Text="Overlay files are automatically created in the application folder. Point your OBS browser source to:" 
+                                         TextWrapping="Wrap"
+                                         Margin="0,0,0,8"/>
+                                
+                                <TextBox x:Name="OverlayPathTextBox" 
+                                       IsReadOnly="True"
+                                       Margin="0,0,0,16"/>
+                                
+                                <Button Content="Open Overlay Folder" 
+                                      Style="{StaticResource MaterialDesignOutlinedButton}"
+                                      Click="OpenOverlayFolder_Click"/>
+                            </StackPanel>
+                        </materialDesign:Card>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Settings Tab -->
+            <TabItem Header="⚙️ Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16">
+                        <!-- Account Connections -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Account Connections" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <!-- Twitch Connection -->
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <Ellipse Grid.Column="0" x:Name="TwitchStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
+                                    <TextBlock Grid.Column="1" Text="Twitch" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="2" 
+                                          x:Name="TwitchConnectButton"
+                                          Content="Connect" 
+                                          Style="{StaticResource MaterialDesignRaisedButton}"
+                                          Click="ConnectTwitch_Click"/>
+                                </Grid>
+                                
+                                <!-- Spotify Connection -->
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <Ellipse Grid.Column="0" x:Name="SpotifyStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
+                                    <TextBlock Grid.Column="1" Text="Spotify" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="2" 
+                                          x:Name="SpotifyConnectButton"
+                                          Content="Connect" 
+                                          Style="{StaticResource MaterialDesignRaisedButton}"
+                                          Click="ConnectSpotify_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- Song Request Settings -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <TextBlock Text="Song Request Settings" 
+                                         FontSize="18" 
+                                         FontWeight="Medium" 
+                                         Margin="0,0,0,16"/>
+                                
+                                <CheckBox x:Name="EnableChatCommandsCheckBox" 
+                                        Content="Enable chat commands (!songrequest)" 
+                                        IsChecked="True"
+                                        Margin="0,0,0,8"/>
+                                
+                                <CheckBox x:Name="EnableChannelPointsCheckBox" 
+                                        Content="Enable channel point redemptions" 
+                                        IsChecked="True"
+                                        Margin="0,0,0,8"/>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="Max queue length:" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBox x:Name="MaxQueueLengthTextBox" 
+                                           Text="10" 
+                                           Width="60"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </materialDesign:Card>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- Status Bar -->
+        <materialDesign:Card Grid.Row="2" Margin="16,0,16,16" Padding="8,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="StatusText" 
+                         Text="Ready to stream! Connect your accounts to get started." 
+                         VerticalAlignment="Center"/>
+            </StackPanel>
+        </materialDesign:Card>
+    </Grid>
+</Window>
