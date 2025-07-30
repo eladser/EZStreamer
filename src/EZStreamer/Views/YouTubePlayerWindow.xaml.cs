@@ -65,7 +65,10 @@ namespace EZStreamer.Views
         private async Task LoadYouTubePlayer()
         {
             var playerHtml = GetYouTubePlayerHtml();
-            await YouTubeWebView.CoreWebView2.NavigateToString(playerHtml);
+            // FIXED: NavigateToString is synchronous, not async
+            YouTubeWebView.CoreWebView2.NavigateToString(playerHtml);
+            // Add a small delay to allow navigation to start
+            await Task.Delay(100);
         }
 
         public async Task PlaySong(SongRequest song)
@@ -82,7 +85,7 @@ namespace EZStreamer.Views
                 
                 // Load the video in the YouTube player
                 var videoId = ExtractVideoId(song.SourceId);
-                // Line 73: This should now work correctly
+                // This should now work correctly
                 await ExecuteScript($"loadVideo('{videoId}')");
                 
                 _isPlaying = true;
@@ -159,7 +162,7 @@ namespace EZStreamer.Views
             }
         }
 
-        // CRITICAL FIX: ExecuteScript now properly returns Task
+        // ExecuteScript properly returns Task
         private async Task ExecuteScript(string script)
         {
             if (_isInitialized && YouTubeWebView.CoreWebView2 != null)
