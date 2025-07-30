@@ -82,7 +82,7 @@ namespace EZStreamer.Views
                 
                 // Load the video in the YouTube player
                 var videoId = ExtractVideoId(song.SourceId);
-                // Fixed CS4008: Properly await the ExecuteScript call
+                // Line 73: This should now work correctly
                 await ExecuteScript($"loadVideo('{videoId}')");
                 
                 _isPlaying = true;
@@ -159,7 +159,7 @@ namespace EZStreamer.Views
             }
         }
 
-        // Fixed CS4008: Made ExecuteScript properly async and returning Task
+        // CRITICAL FIX: ExecuteScript now properly returns Task
         private async Task ExecuteScript(string script)
         {
             if (_isInitialized && YouTubeWebView.CoreWebView2 != null)
