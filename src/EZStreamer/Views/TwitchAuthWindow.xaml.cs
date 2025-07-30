@@ -245,12 +245,12 @@ namespace EZStreamer.Views
         {
             try
             {
-                // Clean up WebView2 resources
-                if (AuthWebView?.CoreWebView2 != null)
+                // Clean up WebView2 resources properly
+                if (AuthWebView != null)
                 {
-                    AuthWebView.CoreWebView2 = null;
+                    // Dispose the WebView2 control which will clean up the CoreWebView2
+                    AuthWebView.Dispose();
                 }
-                AuthWebView?.Dispose();
             }
             catch
             {
