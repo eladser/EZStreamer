@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -406,8 +407,19 @@ namespace EZStreamer.Views
 
         private void SkipSong_Click(object sender, RoutedEventArgs e)
         {
-            _songRequestService.SkipCurrentSong();
-            StatusText.Text = "Song skipped.";
+            // Fixed CS4014: Properly handle the async call
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await _songRequestService.SkipCurrentSong();
+                    Dispatcher.Invoke(() => StatusText.Text = "Song skipped.");
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => StatusText.Text = $"Error skipping song: {ex.Message}");
+                }
+            });
         }
 
         private void UpdateStreamInfo_Click(object sender, RoutedEventArgs e)
