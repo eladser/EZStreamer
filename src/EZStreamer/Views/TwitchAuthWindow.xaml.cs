@@ -12,7 +12,8 @@ namespace EZStreamer.Views
         private readonly ConfigurationService _configService;
         private string _clientId;
         private const string REDIRECT_URI = "http://localhost:3000/auth/twitch/callback";
-        private const string SCOPES = "chat:read+chat:edit+channel:manage:broadcast+channel:read:redemptions+user:read:email";
+        // Fixed: Use spaces instead of plus signs for Twitch OAuth scopes
+        private const string SCOPES = "chat:read chat:edit channel:manage:broadcast channel:read:redemptions user:read:email";
 
         public string AccessToken { get; private set; }
         public bool IsAuthenticated { get; private set; }
@@ -112,7 +113,7 @@ namespace EZStreamer.Views
                     return;
                 }
 
-                // Navigate to Twitch OAuth URL
+                // Navigate to Twitch OAuth URL with properly encoded scopes
                 var authUrl = $"https://id.twitch.tv/oauth2/authorize" +
                             $"?response_type=token" +
                             $"&client_id={_clientId}" +
