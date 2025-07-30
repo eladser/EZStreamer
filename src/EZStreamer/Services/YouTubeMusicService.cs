@@ -32,7 +32,22 @@ namespace EZStreamer.Services
         {
             try
             {
-                // Initialize the YouTube player window
+                // Show immediate feedback to user
+                var result = MessageBox.Show(
+                    "YouTube Music Player will be initialized.\n\n" +
+                    "This service allows you to play YouTube videos for song requests. " +
+                    "A player window will open when songs are requested.\n\n" +
+                    "Would you like to enable YouTube Music?",
+                    "YouTube Music Service",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (result != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                // Initialize the YouTube player window (but don't show it yet)
                 if (_playerWindow == null)
                 {
                     Application.Current.Dispatcher.Invoke(() =>
@@ -42,14 +57,32 @@ namespace EZStreamer.Services
                         _playerWindow.SongEnded += OnPlayerSongEnded;
                         _playerWindow.SongPaused += OnPlayerSongPaused;
                         _playerWindow.SongResumed += OnPlayerSongResumed;
+                        
+                        // Hide the window initially - it will show when a song is played
+                        _playerWindow.Hide();
                     });
                 }
 
                 _isConnected = true;
+                
+                // Show success message
+                MessageBox.Show(
+                    "YouTube Music service enabled successfully!\n\n" +
+                    "The player window will appear when you play YouTube songs.",
+                    "YouTube Music Connected",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+
                 Connected?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)
             {
+                MessageBox.Show(
+                    $"Failed to initialize YouTube Music service:\n\n{ex.Message}",
+                    "YouTube Music Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                    
                 throw new Exception($"Failed to connect to YouTube Music: {ex.Message}", ex);
             }
         }
@@ -67,6 +100,12 @@ namespace EZStreamer.Services
                     _playerWindow = null;
                 });
             }
+            
+            MessageBox.Show(
+                "YouTube Music service disconnected.",
+                "YouTube Music Disconnected",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
             
             Disconnected?.Invoke(this, EventArgs.Empty);
         }

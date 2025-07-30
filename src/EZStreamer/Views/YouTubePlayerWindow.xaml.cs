@@ -12,6 +12,7 @@ namespace EZStreamer.Views
         private SongRequest _currentSong;
         private bool _isPlaying = false;
         private bool _isInitialized = false;
+        private bool _isShuttingDown = false;
 
         public event EventHandler<SongRequest> SongStarted;
         public event EventHandler<SongRequest> SongEnded;
@@ -372,11 +373,55 @@ namespace EZStreamer.Views
             LoadingPanel.Visibility = Visibility.Collapsed;
         }
 
+        // Method to force close the window (called during application shutdown)
+        public void ForceClose()
+        {
+            _isShuttingDown = true;
+            
+            try
+            {
+                // Clean up WebView2 resources
+                if (YouTubeWebView?.CoreWebView2 != null)
+                {
+                    YouTubeWebView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                    YouTubeWebView.CoreWebView2 = null;
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors during shutdown
+            }
+            
+            Close();
+        }
+
         protected override void OnClosing(CancelEventArgs e)
         {
-            // Don't actually close, just hide
-            e.Cancel = true;
-            Hide();
+            // Only prevent closing if it's not during application shutdown
+            if (!_isShuttingDown && Application.Current?.MainWindow != null && Application.Current.MainWindow.IsVisible)
+            {
+                // Don't actually close, just hide (when main app is still running)
+                e.Cancel = true;
+                Hide();
+            }
+            else
+            {
+                // Allow closing during shutdown or if main window is closed
+                try
+                {
+                    // Clean up WebView2 resources
+                    if (YouTubeWebView?.CoreWebView2 != null)
+                    {
+                        YouTubeWebView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                    }
+                }
+                catch
+                {
+                    // Ignore cleanup errors during shutdown
+                }
+                
+                base.OnClosing(e);
+            }
         }
     }
 }
