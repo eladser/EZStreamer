@@ -16,6 +16,28 @@
         Background="{DynamicResource MaterialDesignPaper}"
         FontFamily="{DynamicResource MaterialDesignFont}">
 
+    <Window.Resources>
+        <!-- Status indicator styles -->
+        <Style x:Key="ConnectedStatus" TargetType="Ellipse">
+            <Setter Property="Fill" Value="#4CAF50"/>
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        
+        <Style x:Key="DisconnectedStatus" TargetType="Ellipse">
+            <Setter Property="Fill" Value="#F44336"/>
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        
+        <Style x:Key="ContentCard" TargetType="materialDesign:Card">
+            <Setter Property="Margin" Value="0,0,0,16"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -32,8 +54,9 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <materialDesign:PackIcon Kind="Music" Width="32" Height="32" Margin="0,0,16,0"/>
+                    <materialDesign:PackIcon Kind="Music" Width="32" Height="32" Margin="0,0,16,0" Foreground="#673AB7"/>
                     <TextBlock Text="EZStreamer" FontSize="24" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="v1.0" FontSize="12" VerticalAlignment="Bottom" Margin="8,0,0,4" Opacity="0.6"/>
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -56,7 +79,7 @@
         </materialDesign:Card>
 
         <!-- Main Content -->
-        <TabControl Grid.Row="1" 
+        <TabControl x:Name="TabControl" Grid.Row="1" 
                     Style="{StaticResource MaterialDesignTabControl}"
                     Margin="16,0,16,8">
             
@@ -120,42 +143,145 @@
                             </StackPanel>
                         </materialDesign:Card>
 
-                        <!-- Song Queue -->
+                        <!-- Manual Song Testing -->
                         <materialDesign:Card Style="{StaticResource ContentCard}">
                             <StackPanel>
-                                <TextBlock Text="Song Queue" 
+                                <TextBlock Text="Test Song Request" 
                                          FontSize="18" 
                                          FontWeight="Medium" 
                                          Margin="0,0,0,16"/>
+                                <TextBlock Text="Test the song request functionality by manually adding a song to the queue." 
+                                         Opacity="0.7"
+                                         Margin="0,0,0,12"/>
+                                
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Song Title:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="TestSongTitleTextBox" 
+                                           Text="Example Song" Margin="0,0,16,8"/>
+                                    
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Artist:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                    <TextBox Grid.Row="0" Grid.Column="3" x:Name="TestSongArtistTextBox" 
+                                           Text="Example Artist" Margin="0,0,0,8"/>
+                                    
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Requester:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="TestRequesterTextBox" 
+                                           Text="TestUser" Margin="0,0,16,8"/>
+                                    
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Platform:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="3" x:Name="TestPlatformComboBox" 
+                                            SelectedIndex="0" Margin="0,0,0,8">
+                                        <ComboBoxItem Content="Spotify"/>
+                                        <ComboBoxItem Content="YouTube"/>
+                                    </ComboBox>
+                                    
+                                    <Button Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                          Content="Add Test Song to Queue" 
+                                          Style="{StaticResource MaterialDesignRaisedButton}"
+                                          Click="AddTestSong_Click"
+                                          Margin="0,8,8,0"/>
+                                          
+                                    <Button Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2"
+                                          Content="Clear Queue" 
+                                          Style="{StaticResource MaterialDesignOutlinedButton}"
+                                          Click="ClearQueue_Click"
+                                          Margin="8,8,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <!-- Song Queue -->
+                        <materialDesign:Card Style="{StaticResource ContentCard}">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Song Queue" 
+                                             FontSize="18" 
+                                             FontWeight="Medium"/>
+                                    <TextBlock Grid.Column="1" x:Name="QueueCountText"
+                                             Text="0 songs"
+                                             Opacity="0.7"
+                                             VerticalAlignment="Center"/>
+                                </Grid>
                                 
                                 <ListBox x:Name="SongQueueList" 
                                         MinHeight="200"
                                         MaxHeight="300">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Margin="0,8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                
-                                                <StackPanel Grid.Column="0">
-                                                    <TextBlock Text="{Binding Title}" FontWeight="Medium"/>
-                                                    <TextBlock Text="{Binding Artist}" Opacity="0.7"/>
-                                                    <TextBlock Text="{Binding RequestedBy}" 
-                                                             FontStyle="Italic" 
-                                                             Opacity="0.7"/>
-                                                </StackPanel>
-                                                
-                                                <Button Grid.Column="1" 
-                                                       Style="{StaticResource MaterialDesignIconButton}"
-                                                       ToolTip="Remove from Queue">
-                                                    <materialDesign:PackIcon Kind="Close"/>
-                                                </Button>
-                                            </Grid>
+                                            <materialDesign:Card Margin="0,4" Padding="12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    
+                                                    <!-- Platform Icon -->
+                                                    <materialDesign:PackIcon Grid.Column="0" 
+                                                                           Kind="Music" 
+                                                                           Width="24" Height="24"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="0,0,12,0"/>
+                                                    
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding Title}" FontWeight="Medium"/>
+                                                        <TextBlock Text="{Binding Artist}" Opacity="0.7"/>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="Requested by " Opacity="0.7" FontSize="11"/>
+                                                            <TextBlock Text="{Binding RequestedBy}" 
+                                                                     FontStyle="Italic" 
+                                                                     Opacity="0.7" FontSize="11"/>
+                                                            <TextBlock Text=" • " Opacity="0.7" FontSize="11" Margin="4,0"/>
+                                                            <TextBlock Text="{Binding SourcePlatform}" 
+                                                                     Opacity="0.7" FontSize="11"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    
+                                                    <Button Grid.Column="2" 
+                                                           Style="{StaticResource MaterialDesignIconButton}"
+                                                           ToolTip="Play Now"
+                                                           Click="PlaySongNow_Click"
+                                                           Tag="{Binding}">
+                                                        <materialDesign:PackIcon Kind="Play"/>
+                                                    </Button>
+                                                    
+                                                    <Button Grid.Column="3" 
+                                                           Style="{StaticResource MaterialDesignIconButton}"
+                                                           ToolTip="Remove from Queue"
+                                                           Click="RemoveFromQueue_Click"
+                                                           Tag="{Binding}">
+                                                        <materialDesign:PackIcon Kind="Close"/>
+                                                    </Button>
+                                                </Grid>
+                                            </materialDesign:Card>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
+                                
+                                <!-- Empty queue message -->
+                                <TextBlock x:Name="EmptyQueueMessage"
+                                         Text="No songs in queue. Add a test song above or connect to Twitch to receive requests!"
+                                         TextAlignment="Center"
+                                         Opacity="0.7"
+                                         Margin="0,20"
+                                         Visibility="Visible"/>
                             </StackPanel>
                         </materialDesign:Card>
                     </StackPanel>
@@ -175,13 +301,16 @@
                                  AutoGenerateColumns="False"
                                  CanUserAddRows="False"
                                  CanUserDeleteRows="False"
-                                 IsReadOnly="True">
+                                 IsReadOnly="True"
+                                 GridLinesVisibility="Horizontal"
+                                 HeadersVisibility="Column">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}"/>
-                                <DataGridTextColumn Header="Viewer" Binding="{Binding RequestedBy}"/>
-                                <DataGridTextColumn Header="Song" Binding="{Binding Title}"/>
-                                <DataGridTextColumn Header="Artist" Binding="{Binding Artist}"/>
-                                <DataGridTextColumn Header="Status" Binding="{Binding Status}"/>
+                                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat='HH:mm:ss'}" Width="80"/>
+                                <DataGridTextColumn Header="Viewer" Binding="{Binding RequestedBy}" Width="120"/>
+                                <DataGridTextColumn Header="Song" Binding="{Binding Title}" Width="*"/>
+                                <DataGridTextColumn Header="Artist" Binding="{Binding Artist}" Width="*"/>
+                                <DataGridTextColumn Header="Platform" Binding="{Binding SourcePlatform}" Width="80"/>
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="80"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </StackPanel>
@@ -263,335 +392,7 @@
 
             <!-- Settings Tab -->
             <TabItem Header="⚙️ Settings">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="16">
-                        <!-- Account Connections -->
-                        <materialDesign:Card Style="{StaticResource ContentCard}">
-                            <StackPanel>
-                                <TextBlock Text="Account Connections" 
-                                         FontSize="18" 
-                                         FontWeight="Medium" 
-                                         Margin="0,0,0,16"/>
-                                
-                                <!-- Twitch Connection -->
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    
-                                    <Ellipse Grid.Column="0" x:Name="TwitchStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
-                                    <TextBlock Grid.Column="1" Text="Twitch" VerticalAlignment="Center"/>
-                                    <Button Grid.Column="2" 
-                                          x:Name="TwitchConnectButton"
-                                          Content="Connect" 
-                                          Style="{StaticResource MaterialDesignRaisedButton}"
-                                          Click="ConnectTwitch_Click"/>
-                                </Grid>
-                                
-                                <!-- Spotify Connection -->
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    
-                                    <Ellipse Grid.Column="0" x:Name="SpotifyStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
-                                    <TextBlock Grid.Column="1" Text="Spotify" VerticalAlignment="Center"/>
-                                    <Button Grid.Column="2" 
-                                          x:Name="SpotifyConnectButton"
-                                          Content="Connect" 
-                                          Style="{StaticResource MaterialDesignRaisedButton}"
-                                          Click="ConnectSpotify_Click"/>
-                                </Grid>
-                                
-                                <!-- YouTube Connection -->
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    
-                                    <Ellipse Grid.Column="0" x:Name="YouTubeStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
-                                    <TextBlock Grid.Column="1" Text="YouTube Music" VerticalAlignment="Center"/>
-                                    <Button Grid.Column="2" 
-                                          x:Name="YouTubeConnectButton"
-                                          Content="Connect" 
-                                          Style="{StaticResource MaterialDesignRaisedButton}"
-                                          Click="ConnectYouTube_Click"/>
-                                </Grid>
-                            </StackPanel>
-                        </materialDesign:Card>
-
-                        <!-- Music Settings -->
-                        <materialDesign:Card Style="{StaticResource ContentCard}">
-                            <StackPanel>
-                                <TextBlock Text="Music Settings" 
-                                         FontSize="18" 
-                                         FontWeight="Medium" 
-                                         Margin="0,0,0,16"/>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <TextBlock Text="Preferred Music Source:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,12,0"/>
-                                    <ComboBox x:Name="PreferredMusicSourceComboBox" 
-                                            Width="150"
-                                            SelectionChanged="PreferredMusicSource_Changed">
-                                        <ComboBoxItem Content="Spotify" Tag="Spotify"/>
-                                        <ComboBoxItem Content="YouTube Music" Tag="YouTube"/>
-                                    </ComboBox>
-                                </StackPanel>
-                                
-                                <CheckBox x:Name="AutoPlayNextSongCheckBox" 
-                                        Content="Automatically play next song in queue" 
-                                        IsChecked="True"
-                                        Margin="0,0,0,8"/>
-                                        
-                                <CheckBox x:Name="ShowYouTubePlayerCheckBox" 
-                                        Content="Show YouTube player window when playing YouTube songs" 
-                                        IsChecked="True"
-                                        Margin="0,0,0,8"/>
-                            </StackPanel>
-                        </materialDesign:Card>
-
-                        <!-- Song Request Settings -->
-                        <materialDesign:Card Style="{StaticResource ContentCard}">
-                            <StackPanel>
-                                <TextBlock Text="Song Request Settings" 
-                                         FontSize="18" 
-                                         FontWeight="Medium" 
-                                         Margin="0,0,0,16"/>
-                                
-                                <CheckBox x:Name="EnableChatCommandsCheckBox" 
-                                        Content="Enable chat commands (!songrequest)" 
-                                        IsChecked="True"
-                                        Margin="0,0,0,8"/>
-                                
-                                <CheckBox x:Name="EnableChannelPointsCheckBox" 
-                                        Content="Enable channel point redemptions" 
-                                        IsChecked="True"
-                                        Margin="0,0,0,8"/>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
-                                    <TextBlock Text="Chat command:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox x:Name="ChatCommandTextBox" 
-                                           Text="!songrequest" 
-                                           Width="120"/>
-                                </StackPanel>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <TextBlock Text="Max queue length:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox x:Name="MaxQueueLengthTextBox" 
-                                           Text="10" 
-                                           Width="60"/>
-                                </StackPanel>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <TextBlock Text="Request cooldown (seconds):" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox x:Name="RequestCooldownTextBox" 
-                                           Text="0" 
-                                           Width="60"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </materialDesign:Card>
-
-                        <!-- OBS Integration -->
-                        <materialDesign:Card Style="{StaticResource ContentCard}">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                                    <TextBlock Text="OBS Integration" 
-                                             FontSize="18" 
-                                             FontWeight="Medium"
-                                             VerticalAlignment="Center"/>
-                                    <Ellipse x:Name="OBSStatusIndicator" 
-                                           Style="{StaticResource DisconnectedStatus}"
-                                           Margin="12,0,8,0"/>
-                                    <TextBlock x:Name="OBSStatusText" 
-                                             Text="Disconnected" 
-                                             VerticalAlignment="Center"
-                                             Opacity="0.7"/>
-                                </StackPanel>
-                                
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="60"/>
-                                    </Grid.ColumnDefinitions>
-                                    
-                                    <TextBlock Grid.Column="0" 
-                                             Text="Server:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox Grid.Column="1" 
-                                           x:Name="OBSServerTextBox"
-                                           Text="localhost"
-                                           Margin="0,0,8,0"/>
-                                    <TextBlock Grid.Column="2" 
-                                             Text="Port:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox Grid.Column="3" 
-                                           x:Name="OBSPortTextBox"
-                                           Text="4455"/>
-                                </Grid>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <TextBlock Text="Password:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <PasswordBox x:Name="OBSPasswordBox" 
-                                               Width="200"/>
-                                </StackPanel>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Button x:Name="OBSConnectButton"
-                                          Content="Connect to OBS" 
-                                          Style="{StaticResource MaterialDesignRaisedButton}"
-                                          Click="ConnectOBS_Click"
-                                          Margin="0,0,8,0"/>
-                                    <Button Content="Test Connection" 
-                                          Style="{StaticResource MaterialDesignOutlinedButton}"
-                                          Click="TestOBSConnection_Click"/>
-                                </StackPanel>
-                                
-                                <CheckBox x:Name="OBSAutoConnectCheckBox" 
-                                        Content="Auto-connect to OBS on startup" 
-                                        Margin="0,0,0,8"/>
-                                        
-                                <CheckBox x:Name="OBSSceneSwitchingCheckBox" 
-                                        Content="Enable automatic scene switching" 
-                                        Margin="0,0,0,8"/>
-                            </StackPanel>
-                        </materialDesign:Card>
-
-                        <!-- Overlay Settings -->
-                        <materialDesign:Card Style="{StaticResource ContentCard}">
-                            <StackPanel>
-                                <TextBlock Text="Overlay Settings" 
-                                         FontSize="18" 
-                                         FontWeight="Medium" 
-                                         Margin="0,0,0,16"/>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <TextBlock Text="Overlay Theme:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,12,0"/>
-                                    <ComboBox x:Name="OverlayThemeComboBox" 
-                                            Width="150"
-                                            SelectionChanged="OverlayTheme_Changed">
-                                        <ComboBoxItem Content="Default" Tag="Default"/>
-                                        <ComboBoxItem Content="Minimal" Tag="Minimal"/>
-                                        <ComboBoxItem Content="Neon" Tag="Neon"/>
-                                        <ComboBoxItem Content="Classic" Tag="Classic"/>
-                                    </ComboBox>
-                                </StackPanel>
-                                
-                                <CheckBox x:Name="OverlayShowAlbumArtCheckBox" 
-                                        Content="Show album art in overlay" 
-                                        IsChecked="True"
-                                        Margin="0,0,0,8"/>
-                                        
-                                <CheckBox x:Name="OverlayShowRequesterCheckBox" 
-                                        Content="Show requester name in overlay" 
-                                        IsChecked="True"
-                                        Margin="0,0,0,8"/>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
-                                    <TextBlock Text="Display duration (0 = always show):" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox x:Name="OverlayDurationTextBox" 
-                                           Text="0" 
-                                           Width="60"/>
-                                    <TextBlock Text="seconds" 
-                                             VerticalAlignment="Center" 
-                                             Margin="8,0,0,0"/>
-                                </StackPanel>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Button Content="Preview Overlay" 
-                                          Style="{StaticResource MaterialDesignOutlinedButton}"
-                                          Click="PreviewOverlay_Click"
-                                          Margin="0,0,8,0"/>
-                                    <Button Content="Open Overlay Folder" 
-                                          Style="{StaticResource MaterialDesignOutlinedButton}"
-                                          Click="OpenOverlayFolder_Click"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </materialDesign:Card>
-
-                        <!-- Advanced Settings -->
-                        <materialDesign:Card Style="{StaticResource ContentCard}">
-                            <StackPanel>
-                                <TextBlock Text="Advanced Settings" 
-                                         FontSize="18" 
-                                         FontWeight="Medium" 
-                                         Margin="0,0,0,16"/>
-                                
-                                <CheckBox x:Name="AllowExplicitContentCheckBox" 
-                                        Content="Allow explicit content in song requests" 
-                                        IsChecked="True"
-                                        Margin="0,0,0,8"/>
-                                        
-                                <CheckBox x:Name="RequireFollowersOnlyCheckBox" 
-                                        Content="Require requesters to be followers" 
-                                        Margin="0,0,0,8"/>
-                                        
-                                <CheckBox x:Name="RequireSubscribersOnlyCheckBox" 
-                                        Content="Require requesters to be subscribers" 
-                                        Margin="0,0,0,8"/>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
-                                    <TextBlock Text="Min song duration:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox x:Name="MinDurationTextBox" 
-                                           Text="30" 
-                                           Width="60"/>
-                                    <TextBlock Text="seconds" 
-                                             VerticalAlignment="Center" 
-                                             Margin="8,0,16,0"/>
-                                             
-                                    <TextBlock Text="Max duration:" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
-                                    <TextBox x:Name="MaxDurationTextBox" 
-                                           Text="600" 
-                                           Width="60"/>
-                                    <TextBlock Text="seconds" 
-                                             VerticalAlignment="Center" 
-                                             Margin="8,0,0,0"/>
-                                </StackPanel>
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                                    <Button Content="Reset to Defaults" 
-                                          Style="{StaticResource MaterialDesignOutlinedButton}"
-                                          Click="ResetSettings_Click"
-                                          Margin="0,0,8,0"/>
-                                    <Button Content="Export Settings" 
-                                          Style="{StaticResource MaterialDesignOutlinedButton}"
-                                          Click="ExportSettings_Click"
-                                          Margin="0,0,8,0"/>
-                                    <Button Content="Import Settings" 
-                                          Style="{StaticResource MaterialDesignOutlinedButton}"
-                                          Click="ImportSettings_Click"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </materialDesign:Card>
-                    </StackPanel>
-                </ScrollViewer>
+                <views:SettingsTabContent/>
             </TabItem>
         </TabControl>
 
