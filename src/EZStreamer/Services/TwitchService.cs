@@ -8,7 +8,6 @@ using TwitchLib.Communication.Models;
 using TwitchLib.PubSub;
 using TwitchLib.PubSub.Events;
 using TwitchLib.Api;
-using EZStreamer.Models;
 
 namespace EZStreamer.Services
 {
@@ -34,7 +33,7 @@ namespace EZStreamer.Services
             
         }
 
-        public async Task Connect(string accessToken, string channelName = null)
+        public async Task ConnectAsync(string accessToken, string channelName = null)
         {
             try
             {
@@ -107,7 +106,7 @@ namespace EZStreamer.Services
         // Simplified connect method for MainWindow compatibility
         public void Connect(string accessToken)
         {
-            Task.Run(async () => await Connect(accessToken, null));
+            Task.Run(async () => await ConnectAsync(accessToken, null));
         }
 
         public void Disconnect()
@@ -127,7 +126,7 @@ namespace EZStreamer.Services
             }
         }
 
-        public async Task UpdateStreamInfo(string title, string categoryName = null)
+        public async Task UpdateStreamInfoAsync(string title, string categoryName = null)
         {
             try
             {
@@ -170,7 +169,7 @@ namespace EZStreamer.Services
         // Simplified update method for MainWindow compatibility
         public void UpdateStreamInfo(string title, string category)
         {
-            Task.Run(async () => await UpdateStreamInfo(title, category));
+            Task.Run(async () => await UpdateStreamInfoAsync(title, category));
         }
 
         public void SendChatMessage(string message)
@@ -195,7 +194,7 @@ namespace EZStreamer.Services
             Connected?.Invoke(this, EventArgs.Empty);
         }
 
-        private void OnClientDisconnected(object sender, OnDisconnectedEventArgs e)
+        private void OnClientDisconnected(object sender, Communication.Events.OnDisconnectedEventArgs e)
         {
             Disconnected?.Invoke(this, EventArgs.Empty);
         }
