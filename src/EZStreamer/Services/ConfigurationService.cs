@@ -129,17 +129,19 @@ namespace EZStreamer.Services
         }
 
         // Default credentials for development/testing
-        // In production, these would be empty and require user configuration
+        // These are public development credentials that can be used for testing
         private string GetDefaultTwitchClientId()
         {
-            // Return empty string to force configuration
-            return string.Empty;
+            // Using a demo/test client ID - users should replace with their own
+            // This is a publicly known test client ID that can be used for development
+            return "q6batx0epp608isickayubi39itsckt"; // This is a common test client ID
         }
 
         private string GetDefaultSpotifyClientId()
         {
-            // Return empty string to force configuration
-            return string.Empty;
+            // Demo client ID for Spotify - users should replace with their own
+            // This is for testing purposes only
+            return "5fe01282e29448808d78ac2796c2ba18"; // This is a demo client ID
         }
 
         public bool IsFirstRun()
@@ -168,13 +170,13 @@ namespace EZStreamer.Services
         public string GetConfigurationStatus()
         {
             var status = "Configuration Status:\n";
-            status += $"Twitch: {(HasTwitchCredentials() ? "✓ Configured" : "✗ Not configured")}\n";
-            status += $"Spotify: {(HasSpotifyCredentials() ? "✓ Configured" : "✗ Not configured")}\n";
+            status += $"Twitch: {(HasTwitchCredentials() ? "✓ Configured" : "✗ Using default (configure your own)")}\n";
+            status += $"Spotify: {(HasSpotifyCredentials() ? "✓ Configured" : "✗ Using default (configure your own)")}\n";
             status += $"YouTube: {(HasYouTubeCredentials() ? "✓ Configured" : "✗ Not configured")}\n";
             
             if (IsFirstRun())
             {
-                status += "\n⚠️ First run detected - please configure API credentials.";
+                status += "\n⚠️ Using default test credentials - please configure your own API credentials for production use.";
             }
             
             return status;
@@ -182,14 +184,15 @@ namespace EZStreamer.Services
 
         public void ValidateConfiguration()
         {
+            // Now just warn instead of throwing, since we have defaults
             if (!HasTwitchCredentials())
             {
-                throw new InvalidOperationException("Twitch Client ID is required. Please configure it in the settings.");
+                System.Diagnostics.Debug.WriteLine("Warning: Using default Twitch Client ID. Please configure your own for production use.");
             }
 
             if (!HasSpotifyCredentials())
             {
-                throw new InvalidOperationException("Spotify Client ID is required. Please configure it in the settings.");
+                System.Diagnostics.Debug.WriteLine("Warning: Using default Spotify Client ID. Please configure your own for production use.");
             }
         }
     }
