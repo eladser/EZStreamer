@@ -244,6 +244,43 @@ namespace EZStreamer.Services
             }
         }
 
+        public async Task<SongRequest> GetCurrentSongInfo()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_accessToken))
+                    return null;
+
+                var response = await _httpClient.GetAsync("me/player/currently-playing");
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var content = await response.Content.ReadAsStringAsync();
+                var currentlyPlaying = JsonSerializer.Deserialize<SpotifyCurrentlyPlaying>(content);
+
+                if (currentlyPlaying?.Item != null)
+                {
+                    return new SongRequest
+                    {
+                        Title = currentlyPlaying.Item.Name,
+                        Artist = string.Join(", ", currentlyPlaying.Item.Artists?.Select(a => a.Name) ?? new[] { "Unknown Artist" }),
+                        SourcePlatform = "Spotify",
+                        SourceId = currentlyPlaying.Item.Id,
+                        Duration = TimeSpan.FromMilliseconds(currentlyPlaying.Item.DurationMs),
+                        AlbumArt = currentlyPlaying.Item.Album?.Images?.FirstOrDefault()?.Url ?? "",
+                        Status = currentlyPlaying.IsPlaying ? SongRequestStatus.Playing : SongRequestStatus.Queued
+                    };
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error getting current song info: {ex.Message}");
+                return null;
+            }
+        }
+
         public void Dispose()
         {
             _httpClient?.Dispose();
@@ -295,5 +332,11 @@ namespace EZStreamer.Services
     public class SpotifyImage
     {
         public string Url { get; set; }
+    }
+
+    public class SpotifyCurrentlyPlaying
+    {
+        public bool IsPlaying { get; set; }
+        public SpotifyTrack Item { get; set; }
     }
 }
