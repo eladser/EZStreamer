@@ -11,6 +11,7 @@ using TwitchLib.Communication.Events;
 using TwitchLib.PubSub;
 using TwitchLib.PubSub.Events;
 using TwitchLib.Api;
+using TwitchLib.Api.Helix.Models.Channels.ModifyChannelInformation;
 
 namespace EZStreamer.Services
 {
@@ -157,11 +158,22 @@ namespace EZStreamer.Services
                     }
                 }
 
-                // Fixed CS1739: Use simpler approach that should work with TwitchLib
+                // Fixed CS7036: Create proper ModifyChannelInformationRequest object
                 try
                 {
-                    // Try the basic API call without parameters that might not exist
-                    await _api.Helix.Channels.ModifyChannelInformationAsync(broadcasterId);
+                    var request = new ModifyChannelInformationRequest();
+                    
+                    if (!string.IsNullOrEmpty(title))
+                    {
+                        request.Title = title;
+                    }
+                    
+                    if (!string.IsNullOrEmpty(categoryId))
+                    {
+                        request.GameId = categoryId;
+                    }
+
+                    await _api.Helix.Channels.ModifyChannelInformationAsync(broadcasterId, request);
                     System.Diagnostics.Debug.WriteLine($"Updated channel info: Title='{title}', Category='{categoryName}'");
                 }
                 catch (Exception apiEx)
