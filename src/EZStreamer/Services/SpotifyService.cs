@@ -2,18 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using SpotifyAPI.Web;
+using System.Net.Http;
+using System.Text.Json;
 using EZStreamer.Models;
 
 namespace EZStreamer.Services
 {
     public class SpotifyService
     {
-        private ISpotifyApi _spotify;
+        private readonly HttpClient _httpClient;
         private string _accessToken;
-        private Device _activeDevice;
+        private SpotifyDevice _activeDevice;
 
-        public bool IsConnected => _spotify != null;
+        public bool IsConnected => !string.IsNullOrEmpty(_accessToken);
         public string ActiveDeviceName => _activeDevice?.Name ?? "No device selected";
 
         public event EventHandler Connected;
@@ -23,7 +24,8 @@ namespace EZStreamer.Services
 
         public SpotifyService()
         {
-            
+            _httpClient = new HttpClient();
+            _httpClient.BaseAddress = new Uri("https://api.spotify.com/v1/");
         }
 
         public async Task Connect(string accessToken)
@@ -31,14 +33,14 @@ namespace EZStreamer.Services
             try
             {
                 _accessToken = accessToken;
-                var config = SpotifyClientConfig.CreateDefault().WithToken(accessToken);
-                _spotify = new SpotifyApi(config);
+                _httpClient.DefaultRequestHeaders.Clear();
+                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
 
-                // Test the connection
-                var user = await _spotify.UserProfile.Current();
-                if (user == null)
+                // Test the connection by getting user profile
+                var response = await _httpClient.GetAsync("me");
+                if (!response.IsSuccessStatusCode)
                 {
-                    throw new Exception("Failed to get user profile");
+                    throw new Exception($"Failed to authenticate with Spotify: {response.StatusCode}");
                 }
 
                 // Get available devices
@@ -48,35 +50,41 @@ namespace EZStreamer.Services
             }
             catch (Exception ex)
             {
-                _spotify = null;
                 _accessToken = null;
+                _httpClient.DefaultRequestHeaders.Clear();
                 throw new Exception($"Failed to connect to Spotify: {ex.Message}", ex);
             }
         }
 
         public void Disconnect()
         {
-            _spotify = null;
             _accessToken = null;
+            _httpClient.DefaultRequestHeaders.Clear();
             _activeDevice = null;
             
             Disconnected?.Invoke(this, EventArgs.Empty);
         }
 
-        public async Task<List<Device>> GetAvailableDevices()
+        public async Task<List<SpotifyDevice>> GetAvailableDevices()
         {
             try
             {
-                if (_spotify == null)
-                    return new List<Device>();
+                if (string.IsNullOrEmpty(_accessToken))
+                    return new List<SpotifyDevice>();
 
-                var devices = await _spotify.Player.GetAvailableDevices();
-                return devices.Devices?.ToList() ?? new List<Device>();
+                var response = await _httpClient.GetAsync("me/player/devices");
+                if (!response.IsSuccessStatusCode)
+                    return new List<SpotifyDevice>();
+
+                var content = await response.Content.ReadAsStringAsync();
+                var devicesResponse = JsonSerializer.Deserialize<SpotifyDevicesResponse>(content);
+                
+                return devicesResponse?.Devices ?? new List<SpotifyDevice>();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error getting devices: {ex.Message}");
-                return new List<Device>();
+                return new List<SpotifyDevice>();
             }
         }
 
@@ -92,25 +100,27 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (_spotify == null)
+                if (string.IsNullOrEmpty(_accessToken))
                     return new List<SongRequest>();
 
-                var searchRequest = new SearchRequest(SearchRequest.Types.Track, query)
-                {
-                    Limit = limit
-                };
+                var encodedQuery = Uri.EscapeDataString(query);
+                var response = await _httpClient.GetAsync($"search?q={encodedQuery}&type=track&limit={limit}");
+                
+                if (!response.IsSuccessStatusCode)
+                    return new List<SongRequest>();
 
-                var searchResult = await _spotify.Search.Item(searchRequest);
+                var content = await response.Content.ReadAsStringAsync();
+                var searchResponse = JsonSerializer.Deserialize<SpotifySearchResponse>(content);
                 var songs = new List<SongRequest>();
 
-                if (searchResult.Tracks?.Items != null)
+                if (searchResponse?.Tracks?.Items != null)
                 {
-                    foreach (var track in searchResult.Tracks.Items)
+                    foreach (var track in searchResponse.Tracks.Items)
                     {
                         var songRequest = new SongRequest
                         {
                             Title = track.Name,
-                            Artist = string.Join(", ", track.Artists.Select(a => a.Name)),
+                            Artist = string.Join(", ", track.Artists?.Select(a => a.Name) ?? new[] { "Unknown Artist" }),
                             RequestedBy = requestedBy,
                             SourcePlatform = "Spotify",
                             SourceId = track.Id,
@@ -134,21 +144,28 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (_spotify == null || _activeDevice == null)
+                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
                     return false;
 
-                var playRequest = new PlayerResumePlaybackRequest
+                var playData = new
                 {
-                    DeviceId = _activeDevice.Id,
-                    Uris = new List<string> { $"spotify:track:{song.SourceId}" }
+                    uris = new[] { $"spotify:track:{song.SourceId}" },
+                    device_id = _activeDevice.Id
                 };
 
-                await _spotify.Player.ResumePlayback(playRequest);
+                var json = JsonSerializer.Serialize(playData);
+                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
                 
-                song.Status = SongRequestStatus.Playing;
-                TrackStarted?.Invoke(this, song);
+                var response = await _httpClient.PutAsync("me/player/play", content);
                 
-                return true;
+                if (response.IsSuccessStatusCode)
+                {
+                    song.Status = SongRequestStatus.Playing;
+                    TrackStarted?.Invoke(this, song);
+                    return true;
+                }
+
+                return false;
             }
             catch (Exception ex)
             {
@@ -161,16 +178,13 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (_spotify == null || _activeDevice == null)
+                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
                     return false;
 
-                var addToQueueRequest = new PlayerAddToQueueRequest($"spotify:track:{song.SourceId}")
-                {
-                    DeviceId = _activeDevice.Id
-                };
-
-                await _spotify.Player.AddToQueue(addToQueueRequest);
-                return true;
+                var uri = Uri.EscapeDataString($"spotify:track:{song.SourceId}");
+                var response = await _httpClient.PostAsync($"me/player/queue?uri={uri}&device_id={_activeDevice.Id}", null);
+                
+                return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
@@ -183,16 +197,11 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (_spotify == null || _activeDevice == null)
+                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
                     return false;
 
-                var skipRequest = new PlayerSkipNextRequest
-                {
-                    DeviceId = _activeDevice.Id
-                };
-
-                await _spotify.Player.SkipNext(skipRequest);
-                return true;
+                var response = await _httpClient.PostAsync($"me/player/next?device_id={_activeDevice.Id}", null);
+                return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
@@ -205,16 +214,11 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (_spotify == null || _activeDevice == null)
+                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
                     return false;
 
-                var pauseRequest = new PlayerPausePlaybackRequest
-                {
-                    DeviceId = _activeDevice.Id
-                };
-
-                await _spotify.Player.PausePlayback(pauseRequest);
-                return true;
+                var response = await _httpClient.PutAsync($"me/player/pause?device_id={_activeDevice.Id}", null);
+                return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
@@ -227,16 +231,11 @@ namespace EZStreamer.Services
         {
             try
             {
-                if (_spotify == null || _activeDevice == null)
+                if (string.IsNullOrEmpty(_accessToken) || _activeDevice == null)
                     return false;
 
-                var resumeRequest = new PlayerResumePlaybackRequest
-                {
-                    DeviceId = _activeDevice.Id
-                };
-
-                await _spotify.Player.ResumePlayback(resumeRequest);
-                return true;
+                var response = await _httpClient.PutAsync($"me/player/play?device_id={_activeDevice.Id}", null);
+                return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
@@ -245,101 +244,56 @@ namespace EZStreamer.Services
             }
         }
 
-        public async Task<CurrentlyPlaying> GetCurrentlyPlaying()
+        public void Dispose()
         {
-            try
-            {
-                if (_spotify == null)
-                    return null;
-
-                return await _spotify.Player.GetCurrentlyPlaying(new PlayerCurrentlyPlayingRequest());
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error getting currently playing: {ex.Message}");
-                return null;
-            }
+            _httpClient?.Dispose();
         }
+    }
 
-        public async Task<SongRequest> GetCurrentSongInfo()
-        {
-            try
-            {
-                var currentlyPlaying = await GetCurrentlyPlaying();
-                
-                if (currentlyPlaying?.Item is FullTrack track)
-                {
-                    return new SongRequest
-                    {
-                        Title = track.Name,
-                        Artist = string.Join(", ", track.Artists.Select(a => a.Name)),
-                        SourcePlatform = "Spotify",
-                        SourceId = track.Id,
-                        Duration = TimeSpan.FromMilliseconds(track.DurationMs),
-                        AlbumArt = track.Album?.Images?.FirstOrDefault()?.Url ?? "",
-                        Status = currentlyPlaying.IsPlaying ? SongRequestStatus.Playing : SongRequestStatus.Queued
-                    };
-                }
+    // Simple Spotify API response models
+    public class SpotifyDevice
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public bool IsActive { get; set; }
+    }
 
-                return null;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error getting current song info: {ex.Message}");
-                return null;
-            }
-        }
+    public class SpotifyDevicesResponse
+    {
+        public List<SpotifyDevice> Devices { get; set; }
+    }
 
-        public async Task<bool> SetVolume(int volumePercent)
-        {
-            try
-            {
-                if (_spotify == null || _activeDevice == null)
-                    return false;
+    public class SpotifySearchResponse
+    {
+        public SpotifyTracksResponse Tracks { get; set; }
+    }
 
-                var volumeRequest = new PlayerVolumeRequest(volumePercent)
-                {
-                    DeviceId = _activeDevice.Id
-                };
+    public class SpotifyTracksResponse
+    {
+        public List<SpotifyTrack> Items { get; set; }
+    }
 
-                await _spotify.Player.SetVolume(volumeRequest);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error setting volume: {ex.Message}");
-                return false;
-            }
-        }
+    public class SpotifyTrack
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public int DurationMs { get; set; }
+        public List<SpotifyArtist> Artists { get; set; }
+        public SpotifyAlbum Album { get; set; }
+    }
 
-        public async Task<bool> SetActiveDevice(string deviceId)
-        {
-            try
-            {
-                if (_spotify == null)
-                    return false;
+    public class SpotifyArtist
+    {
+        public string Name { get; set; }
+    }
 
-                var devices = await GetAvailableDevices();
-                _activeDevice = devices.FirstOrDefault(d => d.Id == deviceId);
-                
-                if (_activeDevice != null)
-                {
-                    var transferRequest = new PlayerTransferPlaybackRequest(new List<string> { deviceId })
-                    {
-                        Play = false
-                    };
+    public class SpotifyAlbum
+    {
+        public List<SpotifyImage> Images { get; set; }
+    }
 
-                    await _spotify.Player.TransferPlayback(transferRequest);
-                    return true;
-                }
-
-                return false;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error setting active device: {ex.Message}");
-                return false;
-            }
-        }
+    public class SpotifyImage
+    {
+        public string Url { get; set; }
     }
 }
