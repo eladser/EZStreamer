@@ -1,0 +1,71 @@
+<Window x:Class="EZStreamer.Views.AuthCodeInputDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Enter Authorization Code" 
+        Height="300" Width="500"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#1DB954" Padding="20">
+            <StackPanel>
+                <TextBlock Text="🎵 Spotify Authorization" 
+                          FontSize="18" FontWeight="Bold" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+                <TextBlock Text="Copy the authorization code from the browser" 
+                          FontSize="12" 
+                          Foreground="White" Opacity="0.9" 
+                          HorizontalAlignment="Center" 
+                          Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Content -->
+        <StackPanel Grid.Row="1" Margin="20">
+            <TextBlock Text="Authorization Code:" FontWeight="Bold" Margin="0,0,0,5"/>
+            <TextBox x:Name="CodeTextBox" 
+                     Height="80" 
+                     TextWrapping="Wrap" 
+                     AcceptsReturn="True"
+                     VerticalScrollBarVisibility="Auto"
+                     FontFamily="Consolas"
+                     FontSize="11"
+                     Background="#f8f8f8"
+                     Padding="10"/>
+            
+            <TextBlock Text="Copy the code from the browser window and paste it above." 
+                       FontStyle="Italic" 
+                       Foreground="Gray" 
+                       Margin="0,10,0,0" 
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="2" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right" 
+                    Margin="20">
+            <Button x:Name="OkButton" 
+                    Content="Continue" 
+                    Width="80" 
+                    Height="30" 
+                    Margin="0,0,10,0"
+                    Background="#1DB954" 
+                    Foreground="White" 
+                    BorderThickness="0"
+                    Click="OkButton_Click"/>
+            <Button x:Name="CancelButton" 
+                    Content="Cancel" 
+                    Width="80" 
+                    Height="30"
+                    Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
