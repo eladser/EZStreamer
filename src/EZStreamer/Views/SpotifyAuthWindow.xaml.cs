@@ -22,7 +22,7 @@ namespace EZStreamer.Views
         private readonly ConfigurationService _configService;
         private string _clientId;
         private string _clientSecret;
-        private const string REDIRECT_URI = "https://localhost:8443/callback";
+        private string _redirectUri = "https://localhost:8443/callback";
         private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private";
         
         private HttpListener _httpListener;
@@ -30,6 +30,7 @@ namespace EZStreamer.Views
         private CancellationTokenSource _cancellationTokenSource;
         private bool _serverStarted = false;
         private int _debugCounter = 0;
+        private bool _useHttpFallback = false;
 
         public string AccessToken { get; private set; }
         public bool IsAuthenticated { get; private set; }
@@ -47,6 +48,7 @@ namespace EZStreamer.Views
             
             LogDebug($"ClientId: {(!string.IsNullOrEmpty(_clientId) ? $"SET ({_clientId.Length} chars)" : "NOT SET")}");
             LogDebug($"ClientSecret: {(!string.IsNullOrEmpty(_clientSecret) ? $"SET ({_clientSecret.Length} chars)" : "NOT SET")}");
+            LogDebug($"Administrator check: {IsRunningAsAdministrator()}");
             LogDebug($"Running as Administrator: {IsRunningAsAdministrator()}");
             LogDebug($"WebView2 Runtime: {GetWebView2Version()}");
             
@@ -138,18 +140,41 @@ namespace EZStreamer.Views
                 LogDebug("=== StartLocalHttpsServer Started ===");
                 
                 LogDebug("Setting up HTTPS certificate for localhost:8443...");
-                await SetupHttpsCertificate();
+                var certificateSetupSuccess = await SetupHttpsCertificate();
                 
                 LogDebug("Creating HttpListener for HTTPS...");
                 _httpListener = new HttpListener();
                 _httpListener.Prefixes.Add("https://localhost:8443/");
                 
                 LogDebug("Starting HTTPS HttpListener...");
-                _httpListener.Start();
-                _isListening = true;
-                _serverStarted = true;
-                
-                LogDebug("✅ HTTPS server started successfully on https://localhost:8443/");
+                try
+                {
+                    _httpListener.Start();
+                    _isListening = true;
+                    _serverStarted = true;
+                    
+                    LogDebug("✅ HTTPS server started successfully on https://localhost:8443/");
+                }
+                catch (HttpListenerException ex) when (ex.ErrorCode == 183) // Already in use
+                {
+                    LogDebug($"⚠️ Port 8443 already in use, trying alternative port...");
+                    _httpListener.Prefixes.Clear();
+                    _httpListener.Prefixes.Add("https://localhost:8444/");
+                    _redirectUri = "https://localhost:8444/callback";
+                    _httpListener.Start();
+                    _isListening = true;
+                    _serverStarted = true;
+                    LogDebug("✅ HTTPS server started on alternative port 8444");
+                }
+                catch (Exception ex)
+                {
+                    LogDebug($"❌ HTTPS server failed to start: {ex.Message}");
+                    
+                    // Try HTTP fallback
+                    LogDebug("🔄 Attempting HTTP fallback...");
+                    await StartHttpFallbackServer();
+                    return;
+                }
                 
                 // Test the server by making a simple request
                 LogDebug("Testing HTTPS server with simple request...");
@@ -197,6 +222,65 @@ namespace EZStreamer.Views
             {
                 LogDebug($"❌ Failed to start HTTPS server: {ex.Message}");
                 LogDebug($"Stack trace: {ex.StackTrace}");
+                
+                // Try HTTP fallback
+                LogDebug("🔄 Attempting HTTP fallback...");
+                await StartHttpFallbackServer();
+            }
+        }
+
+        private async Task StartHttpFallbackServer()
+        {
+            try
+            {
+                LogDebug("=== StartHttpFallbackServer Started ===");
+                _useHttpFallback = true;
+                _redirectUri = "http://localhost:8080/callback";
+                
+                if (_httpListener != null)
+                {
+                    _httpListener.Close();
+                    _httpListener = null;
+                }
+                
+                _httpListener = new HttpListener();
+                _httpListener.Prefixes.Add("http://localhost:8080/");
+                
+                LogDebug("Starting HTTP HttpListener on port 8080...");
+                _httpListener.Start();
+                _isListening = true;
+                _serverStarted = true;
+                
+                LogDebug("✅ HTTP fallback server started successfully on http://localhost:8080/");
+                
+                // Start listening for requests
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var requestCount = 0;
+                        while (_isListening && !_cancellationTokenSource.Token.IsCancellationRequested)
+                        {
+                            LogDebug($"Waiting for HTTP request #{requestCount + 1}...");
+                            
+                            var context = await GetContextAsync(_httpListener, _cancellationTokenSource.Token);
+                            if (context != null)
+                            {
+                                requestCount++;
+                                LogDebug($"✅ Received HTTP request #{requestCount}: {context.Request.Url}");
+                                _ = Task.Run(() => ProcessCallback(context));
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogDebug($"❌ Error in HTTP server loop: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Failed to start HTTP fallback server: {ex.Message}");
                 throw;
             }
         }
@@ -215,23 +299,23 @@ namespace EZStreamer.Views
                     
                     try
                     {
-                        var response = await client.GetAsync("https://localhost:8443/test");
-                        LogDebug($"HTTPS test response: {response.StatusCode}");
+                        var response = await client.GetAsync($"{(_useHttpFallback ? "http" : "https")}://localhost:{(_useHttpFallback ? "8080" : "8443")}/test");
+                        LogDebug($"Server test response: {response.StatusCode}");
                     }
                     catch (HttpRequestException ex)
                     {
-                        LogDebug($"HTTPS test failed (expected): {ex.Message}");
+                        LogDebug($"Server test failed (expected): {ex.Message}");
                         // This is expected since we don't handle /test endpoint
                     }
                 }
             }
             catch (Exception ex)
             {
-                LogDebug($"Error testing HTTPS server: {ex.Message}");
+                LogDebug($"Error testing server: {ex.Message}");
             }
         }
 
-        private async Task SetupHttpsCertificate()
+        private async Task<bool> SetupHttpsCertificate()
         {
             try
             {
@@ -245,6 +329,7 @@ namespace EZStreamer.Views
                 LogDebug($"Certificate valid from: {cert.NotBefore} to {cert.NotAfter}");
                 
                 // Try to install certificate to trusted root store
+                var certInstallSuccess = false;
                 await Task.Run(() =>
                 {
                     try
@@ -272,13 +357,15 @@ namespace EZStreamer.Views
                             
                             store.Close();
                             LogDebug("Certificate store closed");
+                            certInstallSuccess = true;
                         }
 
                         // Try to bind certificate using netsh (requires admin)
                         if (IsRunningAsAdministrator())
                         {
                             LogDebug("✅ Running as administrator, attempting certificate binding...");
-                            BindCertificateToPort(cert.Thumbprint);
+                            var bindingSuccess = BindCertificateToPort(cert.Thumbprint);
+                            LogDebug($"Certificate binding result: {bindingSuccess}");
                         }
                         else
                         {
@@ -294,12 +381,13 @@ namespace EZStreamer.Views
                 });
                 
                 LogDebug("Certificate setup completed");
+                return certInstallSuccess;
             }
             catch (Exception ex)
             {
                 LogDebug($"❌ Certificate setup error: {ex.Message}");
                 LogDebug($"Stack trace: {ex.StackTrace}");
-                // Continue anyway - we'll try HTTPS without custom certificate
+                return false;
             }
         }
 
@@ -310,7 +398,6 @@ namespace EZStreamer.Views
                 var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
                 var principal = new System.Security.Principal.WindowsPrincipal(identity);
                 var isAdmin = principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-                LogDebug($"Administrator check: {isAdmin}");
                 return isAdmin;
             }
             catch (Exception ex)
@@ -320,19 +407,21 @@ namespace EZStreamer.Views
             }
         }
 
-        private void BindCertificateToPort(string thumbprint)
+        private bool BindCertificateToPort(string thumbprint)
         {
             try
             {
                 LogDebug($"=== BindCertificateToPort Started (Thumbprint: {thumbprint}) ===");
                 
+                // Clean up any existing bindings first
+                CleanupExistingCertificateBindings();
+                
                 // Remove any existing binding
                 LogDebug("Removing existing certificate binding...");
-                var deleteCmd = "netsh http delete sslcert ipport=0.0.0.0:8443";
-                var deleteResult = RunNetshCommand(deleteCmd);
+                var deleteResult = RunNetshCommand("netsh http delete sslcert ipport=0.0.0.0:8443");
                 LogDebug($"Delete binding result: {deleteResult}");
 
-                // Add new binding
+                // Add new binding with proper format
                 LogDebug("Adding new certificate binding...");
                 var appId = "{12345678-1234-1234-1234-123456789012}";
                 var addCmd = $"netsh http add sslcert ipport=0.0.0.0:8443 certhash={thumbprint} appid={appId}";
@@ -342,20 +431,75 @@ namespace EZStreamer.Views
                 if (addResult.Contains("successfully") || addResult.Contains("SSL Certificate successfully added"))
                 {
                     LogDebug("✅ Certificate successfully bound to port 8443");
+                    return true;
                 }
                 else if (addResult.Contains("already exists"))
                 {
                     LogDebug("✅ Certificate binding already exists for port 8443");
+                    return true;
+                }
+                else if (addResult.Contains("Error: 1312"))
+                {
+                    LogDebug("⚠️ Error 1312 - Logon session issue. Trying alternative approach...");
+                    
+                    // Try with different app ID
+                    var altAppId = "{" + Guid.NewGuid().ToString() + "}";
+                    var altCmd = $"netsh http add sslcert ipport=0.0.0.0:8443 certhash={thumbprint} appid={altAppId}";
+                    var altResult = RunNetshCommand(altCmd);
+                    LogDebug($"Alternative binding result: {altResult}");
+                    
+                    if (altResult.Contains("successfully"))
+                    {
+                        LogDebug("✅ Certificate bound successfully with alternative app ID");
+                        return true;
+                    }
+                    else
+                    {
+                        LogDebug("❌ Alternative binding also failed");
+                        return false;
+                    }
                 }
                 else
                 {
                     LogDebug($"⚠️ Unexpected certificate binding result: {addResult}");
+                    return false;
                 }
             }
             catch (Exception ex)
             {
                 LogDebug($"❌ Certificate binding error: {ex.Message}");
                 LogDebug($"Stack trace: {ex.StackTrace}");
+                return false;
+            }
+        }
+
+        private void CleanupExistingCertificateBindings()
+        {
+            try
+            {
+                LogDebug("Cleaning up existing certificate bindings for port 8443...");
+                
+                // Show existing bindings
+                var showResult = RunNetshCommand("netsh http show sslcert ipport=0.0.0.0:8443");
+                LogDebug($"Existing bindings: {showResult}");
+                
+                // Try to delete multiple times with different approaches
+                var deleteCommands = new[]
+                {
+                    "netsh http delete sslcert ipport=0.0.0.0:8443",
+                    "netsh http delete sslcert ipport=127.0.0.1:8443",
+                    "netsh http delete sslcert ipport=localhost:8443"
+                };
+                
+                foreach (var cmd in deleteCommands)
+                {
+                    var result = RunNetshCommand(cmd);
+                    LogDebug($"Cleanup command '{cmd}' result: {result}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error during cleanup: {ex.Message}");
             }
         }
 
@@ -373,6 +517,7 @@ namespace EZStreamer.Views
                     process.StartInfo.RedirectStandardError = true;
                     process.StartInfo.UseShellExecute = false;
                     process.StartInfo.CreateNoWindow = true;
+                    process.StartInfo.Verb = "runas"; // Request elevation if needed
                     
                     process.Start();
                     var output = process.StandardOutput.ReadToEnd();
@@ -380,7 +525,8 @@ namespace EZStreamer.Views
                     process.WaitForExit();
                     
                     LogDebug($"Netsh exit code: {process.ExitCode}");
-                    LogDebug($"Netsh output: {output}");
+                    if (!string.IsNullOrEmpty(output))
+                        LogDebug($"Netsh output: {output}");
                     if (!string.IsNullOrEmpty(error))
                         LogDebug($"Netsh error: {error}");
                     
@@ -489,7 +635,7 @@ namespace EZStreamer.Views
             }
             catch (Exception ex)
             {
-                LogDebug($"❌ Error getting HTTPS context: {ex.Message}");
+                LogDebug($"❌ Error getting context: {ex.Message}");
                 LogDebug($"Stack trace: {ex.StackTrace}");
                 return null;
             }
@@ -542,10 +688,10 @@ namespace EZStreamer.Views
                     Dispatcher.Invoke(() => ShowError("Invalid callback - no authorization code received"));
                 }
                 
-                // Send HTTPS response
+                // Send response
                 try
                 {
-                    LogDebug("Sending HTTPS response...");
+                    LogDebug("Sending response...");
                     var buffer = Encoding.UTF8.GetBytes(responseHtml);
                     response.ContentType = "text/html; charset=utf-8";
                     response.ContentLength64 = buffer.Length;
@@ -555,17 +701,17 @@ namespace EZStreamer.Views
                     await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
                     response.OutputStream.Close();
                     
-                    LogDebug("✅ HTTPS response sent successfully");
+                    LogDebug("✅ Response sent successfully");
                 }
                 catch (Exception ex)
                 {
-                    LogDebug($"❌ Error sending HTTPS response: {ex.Message}");
+                    LogDebug($"❌ Error sending response: {ex.Message}");
                     LogDebug($"Stack trace: {ex.StackTrace}");
                 }
             }
             catch (Exception ex)
             {
-                LogDebug($"❌ Error processing HTTPS callback: {ex.Message}");
+                LogDebug($"❌ Error processing callback: {ex.Message}");
                 LogDebug($"Stack trace: {ex.StackTrace}");
             }
         }
@@ -583,14 +729,14 @@ namespace EZStreamer.Views
                     {
                         ["grant_type"] = "authorization_code",
                         ["code"] = authorizationCode,
-                        ["redirect_uri"] = REDIRECT_URI,
+                        ["redirect_uri"] = _redirectUri,
                         ["client_id"] = _clientId,
                         ["client_secret"] = _clientSecret
                     };
                     
                     LogDebug($"Token exchange request prepared:");
                     LogDebug($"- grant_type: authorization_code");
-                    LogDebug($"- redirect_uri: {REDIRECT_URI}");
+                    LogDebug($"- redirect_uri: {_redirectUri}");
                     LogDebug($"- client_id: {_clientId}");
                     LogDebug($"- client_secret: {(_clientSecret.Length)} chars");
                     LogDebug($"- code: {authorizationCode.Length} chars");
@@ -702,13 +848,13 @@ namespace EZStreamer.Views
                     LogDebug($"Navigation delay complete. Server started: {_serverStarted}");
                     if (_serverStarted)
                     {
-                        LogDebug("✅ HTTPS server confirmed started, navigating to Spotify...");
+                        LogDebug("✅ Server confirmed started, navigating to Spotify...");
                         NavigateToSpotifyAuth();
                     }
                     else
                     {
-                        LogDebug("❌ HTTPS server not started, cannot proceed");
-                        ShowError("Local HTTPS server failed to start. Cannot proceed with OAuth.\n\nPlease run EZStreamer as Administrator.");
+                        LogDebug("❌ Server not started, cannot proceed");
+                        ShowError("Local server failed to start. Cannot proceed with OAuth.\n\nPlease run EZStreamer as Administrator.");
                     }
                 });
             });
@@ -724,12 +870,12 @@ namespace EZStreamer.Views
                 var state = Guid.NewGuid().ToString();
                 LogDebug($"Generated state parameter: {state}");
                 
-                // Build OAuth authorization URL (using HTTPS)
+                // Build OAuth authorization URL
                 var authUrl = $"https://accounts.spotify.com/authorize" +
                             $"?response_type=code" +
                             $"&client_id={Uri.EscapeDataString(_clientId)}" +
                             $"&scope={Uri.EscapeDataString(SCOPES)}" +
-                            $"&redirect_uri={Uri.EscapeDataString(REDIRECT_URI)}" +
+                            $"&redirect_uri={Uri.EscapeDataString(_redirectUri)}" +
                             $"&state={Uri.EscapeDataString(state)}" +
                             $"&show_dialog=true";
 
@@ -838,9 +984,9 @@ namespace EZStreamer.Views
             LogDebug($"Is user initiated: {e.IsUserInitiated}");
             LogDebug($"Is redirected: {e.IsRedirected}");
             
-            if (e.Uri.StartsWith(REDIRECT_URI))
+            if (e.Uri.StartsWith(_redirectUri.Substring(0, _redirectUri.LastIndexOf('/'))))
             {
-                LogDebug("✅ Detected HTTPS callback URL - our local server should handle this");
+                LogDebug("✅ Detected callback URL - our local server should handle this");
                 LogDebug("This means Spotify is redirecting back to us - authentication may be successful!");
             }
             else if (e.Uri.StartsWith("https://accounts.spotify.com"))
@@ -954,7 +1100,7 @@ namespace EZStreamer.Views
                 "Spotify Client ID and Secret are required for OAuth authentication.\n\n" +
                 "Would you like to configure them now?\n\n" +
                 "Get them from: https://developer.spotify.com/dashboard\n\n" +
-                "IMPORTANT: Set redirect URI to: https://localhost:8443/callback",
+                $"IMPORTANT: Set redirect URI to: {_redirectUri}",
                 "OAuth Configuration Required",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
@@ -983,7 +1129,7 @@ namespace EZStreamer.Views
                 "3. Enter your Client ID and Secret\n" +
                 "4. Click Save\n" +
                 "5. Try Test Connection again\n\n" +
-                "IMPORTANT: Set redirect URI to: https://localhost:8443/callback",
+                $"IMPORTANT: Set redirect URI to: {_redirectUri}",
                 "Configure Credentials",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -1146,7 +1292,7 @@ namespace EZStreamer.Views
                 {
                     _httpListener.Stop();
                     _httpListener.Close();
-                    LogDebug("✅ HTTPS server stopped");
+                    LogDebug("✅ Server stopped");
                 }
 
                 // Clean up WebView2
