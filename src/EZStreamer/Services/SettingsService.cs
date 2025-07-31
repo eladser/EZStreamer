@@ -11,20 +11,64 @@ namespace EZStreamer.Services
     {
         private readonly string _settingsPath;
         private readonly string _appDataFolder;
+        private AppSettings _cachedSettings;
+        private readonly object _lockObject = new object();
 
         public SettingsService()
         {
-            _appDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "EZStreamer");
-            
-            _settingsPath = Path.Combine(_appDataFolder, "settings.json");
-            
-            // Create directory if it doesn't exist
-            Directory.CreateDirectory(_appDataFolder);
+            try
+            {
+                _appDataFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "EZStreamer");
+                
+                _settingsPath = Path.Combine(_appDataFolder, "settings.json");
+                
+                // Create directory if it doesn't exist
+                Directory.CreateDirectory(_appDataFolder);
+                
+                // Initialize cached settings
+                _cachedSettings = LoadSettingsInternal();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SettingsService initialization error: {ex.Message}");
+                
+                // Fallback initialization
+                _appDataFolder = Path.GetTempPath();
+                _settingsPath = Path.Combine(_appDataFolder, "ezstreamer_settings.json");
+                _cachedSettings = new AppSettings();
+            }
         }
 
         public AppSettings LoadSettings()
+        {
+            lock (_lockObject)
+            {
+                try
+                {
+                    // Return cached settings if available
+                    if (_cachedSettings != null)
+                    {
+                        return _cachedSettings;
+                    }
+                    
+                    // Load from file
+                    _cachedSettings = LoadSettingsInternal();
+                    return _cachedSettings;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex.Message}");
+                    
+                    // Always return a valid AppSettings object
+                    _cachedSettings = new AppSettings();
+                    return _cachedSettings;
+                }
+            }
+        }
+
+        private AppSettings LoadSettingsInternal()
         {
             try
             {
@@ -34,51 +78,92 @@ namespace EZStreamer.Services
                 }
 
                 var encryptedContent = File.ReadAllText(_settingsPath);
-                var decryptedContent = DecryptString(encryptedContent);
+                if (string.IsNullOrEmpty(encryptedContent))
+                {
+                    return new AppSettings();
+                }
                 
-                return JsonConvert.DeserializeObject<AppSettings>(decryptedContent) ?? new AppSettings();
+                var decryptedContent = DecryptString(encryptedContent);
+                if (string.IsNullOrEmpty(decryptedContent))
+                {
+                    return new AppSettings();
+                }
+                
+                var settings = JsonConvert.DeserializeObject<AppSettings>(decryptedContent);
+                return settings ?? new AppSettings();
             }
             catch (Exception ex)
             {
-                // If we can't load settings, create new ones
-                System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Failed to load settings from file: {ex.Message}");
                 return new AppSettings();
             }
         }
 
         public void SaveSettings(AppSettings settings)
         {
-            try
+            lock (_lockObject)
             {
-                var jsonContent = JsonConvert.SerializeObject(settings, Formatting.Indented);
-                var encryptedContent = EncryptString(jsonContent);
-                
-                File.WriteAllText(_settingsPath, encryptedContent);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
-                throw new InvalidOperationException("Failed to save settings. Please check file permissions.", ex);
+                try
+                {
+                    if (settings == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine("Cannot save null settings");
+                        return;
+                    }
+
+                    var jsonContent = JsonConvert.SerializeObject(settings, Formatting.Indented);
+                    var encryptedContent = EncryptString(jsonContent);
+                    
+                    // Ensure directory exists
+                    Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath));
+                    
+                    File.WriteAllText(_settingsPath, encryptedContent);
+                    
+                    // Update cached settings
+                    _cachedSettings = settings;
+                    
+                    System.Diagnostics.Debug.WriteLine("Settings saved successfully");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
+                    // Don't throw - just log the error
+                }
             }
         }
 
         public string GetAppDataFolder()
         {
-            return _appDataFolder;
+            return _appDataFolder ?? Path.GetTempPath();
         }
 
         private string EncryptString(string plainText)
         {
             try
             {
+                if (string.IsNullOrEmpty(plainText))
+                {
+                    return string.Empty;
+                }
+                
                 var data = Encoding.UTF8.GetBytes(plainText);
                 var encrypted = ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
                 return Convert.ToBase64String(encrypted);
             }
-            catch
+            catch (Exception ex)
             {
-                // If encryption fails, return plain text (less secure but functional)
-                return Convert.ToBase64String(Encoding.UTF8.GetBytes(plainText));
+                System.Diagnostics.Debug.WriteLine($"Encryption failed: {ex.Message}");
+                
+                try
+                {
+                    // If encryption fails, return plain text encoded as base64 (less secure but functional)
+                    return Convert.ToBase64String(Encoding.UTF8.GetBytes(plainText));
+                }
+                catch
+                {
+                    // Last resort - return empty string
+                    return string.Empty;
+                }
             }
         }
 
@@ -86,20 +171,29 @@ namespace EZStreamer.Services
         {
             try
             {
+                if (string.IsNullOrEmpty(encryptedText))
+                {
+                    return string.Empty;
+                }
+                
                 var data = Convert.FromBase64String(encryptedText);
                 var decrypted = ProtectedData.Unprotect(data, null, DataProtectionScope.CurrentUser);
                 return Encoding.UTF8.GetString(decrypted);
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"Decryption failed: {ex.Message}");
+                
                 try
                 {
                     // Try to decode as plain base64 (fallback for non-encrypted data)
                     var data = Convert.FromBase64String(encryptedText);
                     return Encoding.UTF8.GetString(data);
                 }
-                catch
+                catch (Exception ex2)
                 {
+                    System.Diagnostics.Debug.WriteLine($"Base64 decode failed: {ex2.Message}");
+                    
                     // If all fails, return empty string
                     return string.Empty;
                 }
@@ -108,22 +202,38 @@ namespace EZStreamer.Services
 
         public void ClearSettings()
         {
-            try
+            lock (_lockObject)
             {
-                if (File.Exists(_settingsPath))
+                try
                 {
-                    File.Delete(_settingsPath);
+                    if (File.Exists(_settingsPath))
+                    {
+                        File.Delete(_settingsPath);
+                    }
+                    
+                    // Reset cached settings
+                    _cachedSettings = new AppSettings();
+                    
+                    System.Diagnostics.Debug.WriteLine("Settings cleared successfully");
                 }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to clear settings: {ex.Message}");
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to clear settings: {ex.Message}");
+                }
             }
         }
 
         public bool SettingsExist()
         {
-            return File.Exists(_settingsPath);
+            try
+            {
+                return File.Exists(_settingsPath);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error checking settings existence: {ex.Message}");
+                return false;
+            }
         }
     }
 }
