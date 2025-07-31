@@ -49,7 +49,7 @@ namespace EZStreamer.Views
             InitializeAuthentication();
         }
 
-        private async void InitializeAuthentication()
+        private void InitializeAuthentication()
         {
             try
             {
@@ -66,7 +66,7 @@ namespace EZStreamer.Views
                 Debug.WriteLine("Credentials found, starting local server...");
                 
                 // Start server in background
-                await Task.Run(async () =>
+                Task.Run(async () =>
                 {
                     try
                     {
@@ -462,6 +462,19 @@ namespace EZStreamer.Views
         {
             Debug.WriteLine("📄 DOM content loaded");
             LoadingPanel.Visibility = Visibility.Collapsed;
+        }
+
+        // Missing event handler that was referenced in XAML
+        private void AuthWebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            Debug.WriteLine($"🌐 WebView Navigation completed. Success: {e.IsSuccess}");
+            LoadingPanel.Visibility = Visibility.Collapsed;
+            
+            if (!e.IsSuccess)
+            {
+                Debug.WriteLine($"❌ WebView navigation failed with error: {e.WebErrorStatus}");
+                ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
+            }
         }
 
         private void ShowConfigurationNeeded()
