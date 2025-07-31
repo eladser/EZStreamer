@@ -29,6 +29,7 @@ namespace EZStreamer.Views
         private bool _isListening = false;
         private CancellationTokenSource _cancellationTokenSource;
         private bool _serverStarted = false;
+        private int _debugCounter = 0;
 
         public string AccessToken { get; private set; }
         public bool IsAuthenticated { get; private set; }
@@ -36,54 +37,83 @@ namespace EZStreamer.Views
         public SpotifyAuthWindow()
         {
             InitializeComponent();
+            LogDebug("=== SpotifyAuthWindow Constructor Started ===");
+            
             _configService = new ConfigurationService();
             var credentials = _configService.GetAPICredentials();
             _clientId = credentials.SpotifyClientId;
             _clientSecret = credentials.SpotifyClientSecret;
             _cancellationTokenSource = new CancellationTokenSource();
             
-            Debug.WriteLine($"SpotifyAuthWindow initialized with ClientId: {(!string.IsNullOrEmpty(_clientId) ? "SET" : "NOT SET")}");
-            Debug.WriteLine($"SpotifyAuthWindow initialized with ClientSecret: {(!string.IsNullOrEmpty(_clientSecret) ? "SET" : "NOT SET")}");
+            LogDebug($"ClientId: {(!string.IsNullOrEmpty(_clientId) ? $"SET ({_clientId.Length} chars)" : "NOT SET")}");
+            LogDebug($"ClientSecret: {(!string.IsNullOrEmpty(_clientSecret) ? $"SET ({_clientSecret.Length} chars)" : "NOT SET")}");
+            LogDebug($"Running as Administrator: {IsRunningAsAdministrator()}");
+            LogDebug($"WebView2 Runtime: {GetWebView2Version()}");
             
             LoadingPanel.Visibility = Visibility.Visible;
             
             // Start initialization
+            LogDebug("Starting initialization...");
             InitializeAuthentication();
+        }
+
+        private void LogDebug(string message)
+        {
+            _debugCounter++;
+            var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            var logMessage = $"[{_debugCounter:D3}] {timestamp} SPOTIFY: {message}";
+            Debug.WriteLine(logMessage);
+            Console.WriteLine(logMessage); // Also log to console
+        }
+
+        private string GetWebView2Version()
+        {
+            try
+            {
+                return CoreWebView2Environment.GetAvailableBrowserVersionString();
+            }
+            catch (Exception ex)
+            {
+                return $"ERROR: {ex.Message}";
+            }
         }
 
         private void InitializeAuthentication()
         {
             try
             {
-                Debug.WriteLine("Starting authentication initialization...");
+                LogDebug("=== InitializeAuthentication Started ===");
                 
                 // Check credentials first
                 if (string.IsNullOrEmpty(_clientId) || string.IsNullOrEmpty(_clientSecret))
                 {
-                    Debug.WriteLine("Missing credentials, showing configuration dialog");
+                    LogDebug("❌ Missing credentials, showing configuration dialog");
                     ShowConfigurationNeeded();
                     return;
                 }
 
-                Debug.WriteLine("Credentials found, starting local HTTPS server...");
+                LogDebug("✅ Credentials found, starting local HTTPS server...");
                 
                 // Start server in background
                 Task.Run(async () =>
                 {
                     try
                     {
+                        LogDebug("Background task started for HTTPS server");
                         await StartLocalHttpsServer();
-                        Debug.WriteLine("Local HTTPS server started successfully");
+                        LogDebug("✅ Local HTTPS server started successfully");
                         
                         Dispatcher.Invoke(() =>
                         {
-                            Debug.WriteLine("Initializing WebView...");
+                            LogDebug("Dispatcher.Invoke - Initializing WebView...");
                             InitializeWebAuth();
                         });
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Failed to start local HTTPS server: {ex.Message}");
+                        LogDebug($"❌ Failed to start local HTTPS server: {ex.Message}");
+                        LogDebug($"Stack trace: {ex.StackTrace}");
+                        
                         Dispatcher.Invoke(() => 
                         {
                             ShowError($"Failed to start local HTTPS server: {ex.Message}\n\n" +
@@ -95,7 +125,8 @@ namespace EZStreamer.Views
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in InitializeAuthentication: {ex.Message}");
+                LogDebug($"❌ Error in InitializeAuthentication: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 ShowError($"Initialization error: {ex.Message}");
             }
         }
@@ -104,49 +135,99 @@ namespace EZStreamer.Views
         {
             try
             {
-                Debug.WriteLine("Setting up HTTPS certificate for localhost:8443...");
+                LogDebug("=== StartLocalHttpsServer Started ===");
                 
-                // Create and install certificate
+                LogDebug("Setting up HTTPS certificate for localhost:8443...");
                 await SetupHttpsCertificate();
                 
-                Debug.WriteLine("Creating HttpListener for HTTPS...");
+                LogDebug("Creating HttpListener for HTTPS...");
                 _httpListener = new HttpListener();
                 _httpListener.Prefixes.Add("https://localhost:8443/");
                 
-                Debug.WriteLine("Starting HTTPS HttpListener...");
+                LogDebug("Starting HTTPS HttpListener...");
                 _httpListener.Start();
                 _isListening = true;
                 _serverStarted = true;
                 
-                Debug.WriteLine("✅ HTTPS server started successfully on https://localhost:8443/");
+                LogDebug("✅ HTTPS server started successfully on https://localhost:8443/");
+                
+                // Test the server by making a simple request
+                LogDebug("Testing HTTPS server with simple request...");
+                _ = Task.Run(() => TestHttpsServer());
                 
                 // Start listening for requests
+                LogDebug("Starting request listener loop...");
                 _ = Task.Run(async () =>
                 {
                     try
                     {
+                        var requestCount = 0;
                         while (_isListening && !_cancellationTokenSource.Token.IsCancellationRequested)
                         {
-                            Debug.WriteLine("Waiting for HTTPS request...");
+                            LogDebug($"Waiting for HTTPS request #{requestCount + 1}...");
                             
                             var context = await GetContextAsync(_httpListener, _cancellationTokenSource.Token);
                             if (context != null)
                             {
-                                Debug.WriteLine($"Received HTTPS request: {context.Request.Url}");
+                                requestCount++;
+                                LogDebug($"✅ Received HTTPS request #{requestCount}: {context.Request.Url}");
+                                LogDebug($"Request method: {context.Request.HttpMethod}");
+                                LogDebug($"User agent: {context.Request.UserAgent}");
+                                LogDebug($"Headers: {context.Request.Headers.Count}");
+                                
                                 _ = Task.Run(() => ProcessCallback(context));
                             }
+                            else
+                            {
+                                LogDebug("GetContextAsync returned null - listener may be stopping");
+                            }
                         }
+                        LogDebug("Request listener loop ended");
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Error in HTTPS server loop: {ex.Message}");
+                        LogDebug($"❌ Error in HTTPS server loop: {ex.Message}");
+                        LogDebug($"Stack trace: {ex.StackTrace}");
                     }
                 });
+                
+                LogDebug("HTTPS server setup complete");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Failed to start HTTPS server: {ex.Message}");
+                LogDebug($"❌ Failed to start HTTPS server: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 throw;
+            }
+        }
+
+        private async Task TestHttpsServer()
+        {
+            try
+            {
+                LogDebug("Testing HTTPS server accessibility...");
+                await Task.Delay(1000); // Wait for server to be ready
+                
+                using (var client = new HttpClient())
+                {
+                    // Configure to accept self-signed certificates
+                    client.DefaultRequestHeaders.Add("User-Agent", "EZStreamer-Test");
+                    
+                    try
+                    {
+                        var response = await client.GetAsync("https://localhost:8443/test");
+                        LogDebug($"HTTPS test response: {response.StatusCode}");
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        LogDebug($"HTTPS test failed (expected): {ex.Message}");
+                        // This is expected since we don't handle /test endpoint
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error testing HTTPS server: {ex.Message}");
             }
         }
 
@@ -154,56 +235,70 @@ namespace EZStreamer.Views
         {
             try
             {
-                Debug.WriteLine("Setting up self-signed certificate for localhost...");
+                LogDebug("=== SetupHttpsCertificate Started ===");
                 
-                // Create a self-signed certificate for localhost
+                LogDebug("Creating self-signed certificate for localhost...");
                 var cert = CreateSelfSignedCertificate();
+                
+                LogDebug($"Certificate created - Subject: {cert.Subject}");
+                LogDebug($"Certificate thumbprint: {cert.Thumbprint}");
+                LogDebug($"Certificate valid from: {cert.NotBefore} to {cert.NotAfter}");
                 
                 // Try to install certificate to trusted root store
                 await Task.Run(() =>
                 {
                     try
                     {
+                        LogDebug("Opening certificate store (CurrentUser\\Root)...");
                         using (var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser))
                         {
                             store.Open(OpenFlags.ReadWrite);
+                            LogDebug($"Certificate store opened. Certificate count: {store.Certificates.Count}");
                             
                             // Check if certificate already exists
                             var existingCerts = store.Certificates.Find(X509FindType.FindByThumbprint, cert.Thumbprint, false);
+                            LogDebug($"Existing certificates with same thumbprint: {existingCerts.Count}");
+                            
                             if (existingCerts.Count == 0)
                             {
+                                LogDebug("Adding certificate to trusted root store...");
                                 store.Add(cert);
-                                Debug.WriteLine($"✅ Certificate added to trusted root store. Thumbprint: {cert.Thumbprint}");
+                                LogDebug($"✅ Certificate added to trusted root store. Thumbprint: {cert.Thumbprint}");
                             }
                             else
                             {
-                                Debug.WriteLine($"✅ Certificate already exists in trusted root store. Thumbprint: {cert.Thumbprint}");
+                                LogDebug($"✅ Certificate already exists in trusted root store. Thumbprint: {cert.Thumbprint}");
                             }
                             
                             store.Close();
+                            LogDebug("Certificate store closed");
                         }
 
                         // Try to bind certificate using netsh (requires admin)
                         if (IsRunningAsAdministrator())
                         {
-                            Debug.WriteLine("Running as administrator, attempting certificate binding...");
+                            LogDebug("✅ Running as administrator, attempting certificate binding...");
                             BindCertificateToPort(cert.Thumbprint);
                         }
                         else
                         {
-                            Debug.WriteLine("Not running as administrator, skipping certificate binding");
+                            LogDebug("⚠️ Not running as administrator, skipping certificate binding");
                         }
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Certificate installation warning: {ex.Message}");
+                        LogDebug($"❌ Certificate installation error: {ex.Message}");
+                        LogDebug($"Stack trace: {ex.StackTrace}");
                         // Continue anyway - HttpListener might work without explicit binding
                     }
                 });
+                
+                LogDebug("Certificate setup completed");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Certificate setup warning: {ex.Message}");
+                LogDebug($"❌ Certificate setup error: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 // Continue anyway - we'll try HTTPS without custom certificate
             }
         }
@@ -214,10 +309,13 @@ namespace EZStreamer.Views
             {
                 var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
                 var principal = new System.Security.Principal.WindowsPrincipal(identity);
-                return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                var isAdmin = principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                LogDebug($"Administrator check: {isAdmin}");
+                return isAdmin;
             }
-            catch
+            catch (Exception ex)
             {
+                LogDebug($"Error checking administrator status: {ex.Message}");
                 return false;
             }
         }
@@ -226,27 +324,38 @@ namespace EZStreamer.Views
         {
             try
             {
+                LogDebug($"=== BindCertificateToPort Started (Thumbprint: {thumbprint}) ===");
+                
                 // Remove any existing binding
+                LogDebug("Removing existing certificate binding...");
                 var deleteCmd = "netsh http delete sslcert ipport=0.0.0.0:8443";
-                RunNetshCommand(deleteCmd);
+                var deleteResult = RunNetshCommand(deleteCmd);
+                LogDebug($"Delete binding result: {deleteResult}");
 
                 // Add new binding
+                LogDebug("Adding new certificate binding...");
                 var appId = "{12345678-1234-1234-1234-123456789012}";
                 var addCmd = $"netsh http add sslcert ipport=0.0.0.0:8443 certhash={thumbprint} appid={appId}";
-                var result = RunNetshCommand(addCmd);
+                var addResult = RunNetshCommand(addCmd);
+                LogDebug($"Add binding result: {addResult}");
                 
-                if (result.Contains("successfully"))
+                if (addResult.Contains("successfully") || addResult.Contains("SSL Certificate successfully added"))
                 {
-                    Debug.WriteLine("✅ Certificate successfully bound to port 8443");
+                    LogDebug("✅ Certificate successfully bound to port 8443");
+                }
+                else if (addResult.Contains("already exists"))
+                {
+                    LogDebug("✅ Certificate binding already exists for port 8443");
                 }
                 else
                 {
-                    Debug.WriteLine($"Certificate binding result: {result}");
+                    LogDebug($"⚠️ Unexpected certificate binding result: {addResult}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Certificate binding error: {ex.Message}");
+                LogDebug($"❌ Certificate binding error: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -254,6 +363,8 @@ namespace EZStreamer.Views
         {
             try
             {
+                LogDebug($"Running netsh command: {command}");
+                
                 using (var process = new Process())
                 {
                     process.StartInfo.FileName = "cmd.exe";
@@ -268,17 +379,17 @@ namespace EZStreamer.Views
                     var error = process.StandardError.ReadToEnd();
                     process.WaitForExit();
                     
-                    Debug.WriteLine($"Netsh command: {command}");
-                    Debug.WriteLine($"Output: {output}");
+                    LogDebug($"Netsh exit code: {process.ExitCode}");
+                    LogDebug($"Netsh output: {output}");
                     if (!string.IsNullOrEmpty(error))
-                        Debug.WriteLine($"Error: {error}");
+                        LogDebug($"Netsh error: {error}");
                     
                     return output + error;
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Failed to run netsh command: {ex.Message}");
+                LogDebug($"❌ Failed to run netsh command: {ex.Message}");
                 return ex.Message;
             }
         }
@@ -287,9 +398,14 @@ namespace EZStreamer.Views
         {
             try
             {
+                LogDebug("=== CreateSelfSignedCertificate Started ===");
+                
                 using (var rsa = RSA.Create(2048))
                 {
+                    LogDebug("RSA key created (2048 bits)");
+                    
                     var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                    LogDebug("Certificate request created");
                     
                     // Add subject alternative names
                     var sanBuilder = new SubjectAlternativeNameBuilder();
@@ -297,32 +413,41 @@ namespace EZStreamer.Views
                     sanBuilder.AddIpAddress(IPAddress.Loopback);
                     sanBuilder.AddIpAddress(IPAddress.IPv6Loopback);
                     request.CertificateExtensions.Add(sanBuilder.Build());
+                    LogDebug("Subject Alternative Names added (localhost, 127.0.0.1, ::1)");
                     
                     // Set certificate as server authentication
                     request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
+                    LogDebug("Basic constraints extension added");
                     
                     // Set key usage
                     request.CertificateExtensions.Add(new X509KeyUsageExtension(
                         X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, false));
+                    LogDebug("Key usage extension added");
                         
                     // Set extended key usage for server authentication
                     var oid = new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1"); // Server Authentication
                     request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([oid], false));
+                    LogDebug("Enhanced key usage extension added (Server Authentication)");
                     
                     // Create the certificate
+                    LogDebug("Creating self-signed certificate...");
                     var certificate = request.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(1));
                     
-                    Debug.WriteLine("✅ Self-signed certificate created successfully");
-                    Debug.WriteLine($"Subject: {certificate.Subject}");
-                    Debug.WriteLine($"Thumbprint: {certificate.Thumbprint}");
-                    Debug.WriteLine($"Valid from: {certificate.NotBefore} to {certificate.NotAfter}");
+                    LogDebug("✅ Self-signed certificate created successfully");
+                    LogDebug($"Subject: {certificate.Subject}");
+                    LogDebug($"Issuer: {certificate.Issuer}");
+                    LogDebug($"Thumbprint: {certificate.Thumbprint}");
+                    LogDebug($"Serial number: {certificate.SerialNumber}");
+                    LogDebug($"Valid from: {certificate.NotBefore} to {certificate.NotAfter}");
+                    LogDebug($"Has private key: {certificate.HasPrivateKey}");
                     
                     return certificate;
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Failed to create self-signed certificate: {ex.Message}");
+                LogDebug($"❌ Failed to create self-signed certificate: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 throw;
             }
         }
@@ -331,36 +456,41 @@ namespace EZStreamer.Views
         {
             try
             {
+                LogDebug("GetContextAsync started - waiting for request...");
                 var contextTask = listener.GetContextAsync();
                 
                 using (cancellationToken.Register(() => 
                 {
                     try 
                     { 
+                        LogDebug("Cancellation requested - stopping listener");
                         listener.Stop(); 
                     } 
-                    catch 
+                    catch (Exception ex)
                     { 
-                        // Ignore cleanup errors 
+                        LogDebug($"Error stopping listener: {ex.Message}");
                     }
                 }))
                 {
-                    return await contextTask;
+                    var context = await contextTask;
+                    LogDebug("GetContextAsync completed - request received");
+                    return context;
                 }
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException ex)
             {
-                Debug.WriteLine("HttpListener was disposed");
+                LogDebug($"HttpListener was disposed: {ex.Message}");
                 return null;
             }
             catch (HttpListenerException ex) when (ex.ErrorCode == 995)
             {
-                Debug.WriteLine("HttpListener operation was aborted");
+                LogDebug($"HttpListener operation was aborted: {ex.Message}");
                 return null;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error getting HTTPS context: {ex.Message}");
+                LogDebug($"❌ Error getting HTTPS context: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 return null;
             }
         }
@@ -369,7 +499,10 @@ namespace EZStreamer.Views
         {
             try
             {
-                Debug.WriteLine($"🔄 Processing HTTPS callback: {context.Request.Url}");
+                LogDebug($"=== ProcessCallback Started ===");
+                LogDebug($"Request URL: {context.Request.Url}");
+                LogDebug($"Request method: {context.Request.HttpMethod}");
+                LogDebug($"User agent: {context.Request.UserAgent}");
                 
                 var request = context.Request;
                 var response = context.Response;
@@ -380,28 +513,31 @@ namespace EZStreamer.Views
                 var error = query["error"];
                 var state = query["state"];
                 
-                Debug.WriteLine($"Authorization code: {(!string.IsNullOrEmpty(code) ? "RECEIVED" : "NOT FOUND")}");
-                Debug.WriteLine($"Error parameter: {error ?? "NONE"}");
+                LogDebug($"Query parameters extracted:");
+                LogDebug($"- code: {(!string.IsNullOrEmpty(code) ? $"RECEIVED ({code.Length} chars)" : "NOT FOUND")}");
+                LogDebug($"- error: {error ?? "NONE"}");
+                LogDebug($"- state: {(!string.IsNullOrEmpty(state) ? $"RECEIVED ({state.Length} chars)" : "NOT FOUND")}");
                 
                 string responseHtml;
                 
                 if (!string.IsNullOrEmpty(error))
                 {
-                    Debug.WriteLine($"❌ OAuth error: {error}");
+                    LogDebug($"❌ OAuth error received: {error}");
                     responseHtml = CreateErrorResponseHtml(error);
                     Dispatcher.Invoke(() => ShowError($"Spotify authorization failed: {error}"));
                 }
                 else if (!string.IsNullOrEmpty(code))
                 {
-                    Debug.WriteLine("✅ Authorization code received, starting token exchange...");
+                    LogDebug("✅ Authorization code received, starting token exchange...");
                     responseHtml = CreateSuccessResponseHtml();
                     
                     // Exchange code for token immediately
+                    LogDebug("Starting token exchange process...");
                     await ExchangeCodeForToken(code);
                 }
                 else
                 {
-                    Debug.WriteLine("❌ No authorization code or error found in callback");
+                    LogDebug("❌ No authorization code or error found in callback");
                     responseHtml = CreateErrorResponseHtml("No authorization code received");
                     Dispatcher.Invoke(() => ShowError("Invalid callback - no authorization code received"));
                 }
@@ -409,24 +545,28 @@ namespace EZStreamer.Views
                 // Send HTTPS response
                 try
                 {
+                    LogDebug("Sending HTTPS response...");
                     var buffer = Encoding.UTF8.GetBytes(responseHtml);
                     response.ContentType = "text/html; charset=utf-8";
                     response.ContentLength64 = buffer.Length;
                     response.StatusCode = 200;
                     
+                    LogDebug($"Response size: {buffer.Length} bytes");
                     await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
                     response.OutputStream.Close();
                     
-                    Debug.WriteLine("✅ HTTPS response sent successfully");
+                    LogDebug("✅ HTTPS response sent successfully");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"❌ Error sending HTTPS response: {ex.Message}");
+                    LogDebug($"❌ Error sending HTTPS response: {ex.Message}");
+                    LogDebug($"Stack trace: {ex.StackTrace}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Error processing HTTPS callback: {ex.Message}");
+                LogDebug($"❌ Error processing HTTPS callback: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -434,7 +574,8 @@ namespace EZStreamer.Views
         {
             try
             {
-                Debug.WriteLine("🔄 Starting token exchange...");
+                LogDebug("=== ExchangeCodeForToken Started ===");
+                LogDebug($"Authorization code length: {authorizationCode.Length}");
                 
                 using (var httpClient = new HttpClient())
                 {
@@ -447,60 +588,83 @@ namespace EZStreamer.Views
                         ["client_secret"] = _clientSecret
                     };
                     
-                    Debug.WriteLine($"Token exchange request data prepared");
-                    Debug.WriteLine($"- grant_type: authorization_code");
-                    Debug.WriteLine($"- redirect_uri: {REDIRECT_URI}");
-                    Debug.WriteLine($"- client_id: {_clientId}");
+                    LogDebug($"Token exchange request prepared:");
+                    LogDebug($"- grant_type: authorization_code");
+                    LogDebug($"- redirect_uri: {REDIRECT_URI}");
+                    LogDebug($"- client_id: {_clientId}");
+                    LogDebug($"- client_secret: {(_clientSecret.Length)} chars");
+                    LogDebug($"- code: {authorizationCode.Length} chars");
                     
                     var requestContent = new FormUrlEncodedContent(requestData);
                     
-                    Debug.WriteLine("Sending token exchange request to Spotify...");
+                    LogDebug("Sending token exchange request to Spotify...");
                     var response = await httpClient.PostAsync("https://accounts.spotify.com/api/token", requestContent);
                     var responseContent = await response.Content.ReadAsStringAsync();
                     
-                    Debug.WriteLine($"Token exchange response: {response.StatusCode}");
+                    LogDebug($"Token exchange response received:");
+                    LogDebug($"- Status code: {response.StatusCode} ({(int)response.StatusCode})");
+                    LogDebug($"- Response length: {responseContent.Length} chars");
+                    LogDebug($"- Response content: {responseContent}");
                     
                     if (response.IsSuccessStatusCode)
                     {
-                        Debug.WriteLine("✅ Token exchange successful!");
-                        Debug.WriteLine($"Response content: {responseContent}");
+                        LogDebug("✅ Token exchange successful!");
                         
-                        var tokenResponse = JsonSerializer.Deserialize<SpotifyTokenResponse>(responseContent);
-                        
-                        if (!string.IsNullOrEmpty(tokenResponse?.access_token))
+                        try
                         {
-                            AccessToken = tokenResponse.access_token;
-                            IsAuthenticated = true;
+                            var tokenResponse = JsonSerializer.Deserialize<SpotifyTokenResponse>(responseContent);
+                            LogDebug($"Token response deserialized:");
+                            LogDebug($"- access_token: {(!string.IsNullOrEmpty(tokenResponse?.access_token) ? $"RECEIVED ({tokenResponse.access_token.Length} chars)" : "NOT FOUND")}");
+                            LogDebug($"- token_type: {tokenResponse?.token_type ?? "NULL"}");
+                            LogDebug($"- expires_in: {tokenResponse?.expires_in ?? 0}");
+                            LogDebug($"- refresh_token: {(!string.IsNullOrEmpty(tokenResponse?.refresh_token) ? $"RECEIVED ({tokenResponse.refresh_token.Length} chars)" : "NOT FOUND")}");
+                            LogDebug($"- scope: {tokenResponse?.scope ?? "NULL"}");
                             
-                            Debug.WriteLine($"✅ Access token received: {AccessToken.Substring(0, Math.Min(20, AccessToken.Length))}...");
-                            
-                            Dispatcher.Invoke(() =>
+                            if (!string.IsNullOrEmpty(tokenResponse?.access_token))
                             {
-                                LoadingPanel.Visibility = Visibility.Collapsed;
+                                AccessToken = tokenResponse.access_token;
+                                IsAuthenticated = true;
                                 
-                                MessageBox.Show(
-                                    $"🎵 Successfully connected to Spotify!\n\n" +
-                                    $"✅ Access token received\n" +
-                                    $"⏰ Expires in: {tokenResponse.expires_in} seconds\n" +
-                                    $"🔄 Refresh token: {(!string.IsNullOrEmpty(tokenResponse.refresh_token) ? "Available" : "Not provided")}",
-                                    "Spotify Authentication Success", 
-                                    MessageBoxButton.OK, 
-                                    MessageBoxImage.Information);
+                                LogDebug($"✅ Access token stored successfully");
+                                LogDebug($"IsAuthenticated set to: {IsAuthenticated}");
                                 
-                                DialogResult = true;
-                                Close();
-                            });
+                                Dispatcher.Invoke(() =>
+                                {
+                                    LogDebug("Dispatcher.Invoke - Showing success message");
+                                    LoadingPanel.Visibility = Visibility.Collapsed;
+                                    
+                                    MessageBox.Show(
+                                        $"🎵 Successfully connected to Spotify!\n\n" +
+                                        $"✅ Access token received\n" +
+                                        $"⏰ Expires in: {tokenResponse.expires_in} seconds\n" +
+                                        $"🔄 Refresh token: {(!string.IsNullOrEmpty(tokenResponse.refresh_token) ? "Available" : "Not provided")}",
+                                        "Spotify Authentication Success", 
+                                        MessageBoxButton.OK, 
+                                        MessageBoxImage.Information);
+                                    
+                                    LogDebug("Setting DialogResult = true and closing window");
+                                    DialogResult = true;
+                                    Close();
+                                });
+                            }
+                            else
+                            {
+                                LogDebug("❌ No access token in deserialized response");
+                                Dispatcher.Invoke(() => ShowError("Token exchange succeeded but no access token received"));
+                            }
                         }
-                        else
+                        catch (JsonException ex)
                         {
-                            Debug.WriteLine("❌ No access token in response");
-                            Dispatcher.Invoke(() => ShowError("Token exchange succeeded but no access token received"));
+                            LogDebug($"❌ JSON deserialization error: {ex.Message}");
+                            LogDebug($"Raw response content: {responseContent}");
+                            Dispatcher.Invoke(() => ShowError($"Failed to parse token response: {ex.Message}"));
                         }
                     }
                     else
                     {
-                        Debug.WriteLine($"❌ Token exchange failed: {response.StatusCode}");
-                        Debug.WriteLine($"Error response: {responseContent}");
+                        LogDebug($"❌ Token exchange failed with status: {response.StatusCode}");
+                        LogDebug($"Response headers: {response.Headers}");
+                        LogDebug($"Error response content: {responseContent}");
                         
                         Dispatcher.Invoke(() => ShowError($"Token exchange failed ({response.StatusCode}):\n\n{responseContent}"));
                     }
@@ -508,8 +672,9 @@ namespace EZStreamer.Views
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Exception during token exchange: {ex.Message}");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                LogDebug($"❌ Exception during token exchange: {ex.Message}");
+                LogDebug($"Exception type: {ex.GetType().Name}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 
                 Dispatcher.Invoke(() => ShowError($"Error during token exchange:\n\n{ex.Message}"));
             }
@@ -517,28 +682,32 @@ namespace EZStreamer.Views
 
         private void InitializeWebAuth()
         {
-            Debug.WriteLine("Initializing WebView authentication...");
+            LogDebug("=== InitializeWebAuth Started ===");
             this.Loaded += SpotifyAuthWindow_Loaded;
+            LogDebug("Window Loaded event handler attached");
         }
 
         private void SpotifyAuthWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("Window loaded, starting OAuth navigation...");
+            LogDebug("=== SpotifyAuthWindow_Loaded Event Fired ===");
             this.Loaded -= SpotifyAuthWindow_Loaded;
+            LogDebug("Window Loaded event handler detached");
             
             // Small delay to ensure everything is ready
+            LogDebug("Starting navigation delay (500ms)...");
             Task.Delay(500).ContinueWith(_ =>
             {
                 Dispatcher.Invoke(() =>
                 {
+                    LogDebug($"Navigation delay complete. Server started: {_serverStarted}");
                     if (_serverStarted)
                     {
-                        Debug.WriteLine("HTTPS server confirmed started, navigating to Spotify...");
+                        LogDebug("✅ HTTPS server confirmed started, navigating to Spotify...");
                         NavigateToSpotifyAuth();
                     }
                     else
                     {
-                        Debug.WriteLine("❌ HTTPS server not started, cannot proceed");
+                        LogDebug("❌ HTTPS server not started, cannot proceed");
                         ShowError("Local HTTPS server failed to start. Cannot proceed with OAuth.\n\nPlease run EZStreamer as Administrator.");
                     }
                 });
@@ -549,10 +718,11 @@ namespace EZStreamer.Views
         {
             try
             {
-                Debug.WriteLine("🔄 Building Spotify OAuth URL...");
+                LogDebug("=== NavigateToSpotifyAuth Started ===");
                 
                 // Generate state parameter for security
                 var state = Guid.NewGuid().ToString();
+                LogDebug($"Generated state parameter: {state}");
                 
                 // Build OAuth authorization URL (using HTTPS)
                 var authUrl = $"https://accounts.spotify.com/authorize" +
@@ -563,22 +733,29 @@ namespace EZStreamer.Views
                             $"&state={Uri.EscapeDataString(state)}" +
                             $"&show_dialog=true";
 
-                Debug.WriteLine($"OAuth URL: {authUrl}");
-                Debug.WriteLine("🌐 Navigating WebView to Spotify authorization...");
-
+                LogDebug($"OAuth URL built:");
+                LogDebug($"Full URL: {authUrl}");
+                LogDebug($"URL Length: {authUrl.Length}");
+                
+                LogDebug($"WebView2 status: {(AuthWebView.CoreWebView2 != null ? "READY" : "NOT READY")}");
+                
                 if (AuthWebView.CoreWebView2 != null)
                 {
+                    LogDebug("🌐 Navigating WebView to Spotify authorization...");
                     AuthWebView.CoreWebView2.Navigate(authUrl);
+                    LogDebug("Navigation command sent to WebView2");
                 }
                 else
                 {
-                    Debug.WriteLine("WebView2 not ready, storing URL for later");
+                    LogDebug("⚠️ WebView2 not ready, storing URL for later");
                     _pendingNavigationUrl = authUrl;
+                    LogDebug($"Pending URL stored: {_pendingNavigationUrl != null}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Error starting OAuth navigation: {ex.Message}");
+                LogDebug($"❌ Error starting OAuth navigation: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 ShowError($"Error starting OAuth flow: {ex.Message}");
             }
         }
@@ -589,42 +766,59 @@ namespace EZStreamer.Views
         {
             try
             {
-                Debug.WriteLine($"WebView2 initialization completed. Success: {e.IsSuccess}");
+                LogDebug($"=== WebView2 Initialization Completed ===");
+                LogDebug($"Success: {e.IsSuccess}");
                 
                 if (e.IsSuccess)
                 {
+                    LogDebug("WebView2 initialization successful - setting up event handlers");
+                    
                     // Configure WebView2 to accept our self-signed certificate
                     AuthWebView.CoreWebView2.PermissionRequested += CoreWebView2_PermissionRequested;
                     AuthWebView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
                     AuthWebView.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
                     AuthWebView.CoreWebView2.DOMContentLoaded += CoreWebView2_DOMContentLoaded;
                     
+                    LogDebug("Event handlers attached");
+                    
                     // Allow insecure content for localhost
                     var settings = AuthWebView.CoreWebView2.Settings;
                     settings.IsGeneralAutofillEnabled = false;
                     settings.IsWebMessageEnabled = true;
                     
+                    LogDebug($"WebView2 settings configured:");
+                    LogDebug($"- IsGeneralAutofillEnabled: {settings.IsGeneralAutofillEnabled}");
+                    LogDebug($"- IsWebMessageEnabled: {settings.IsWebMessageEnabled}");
+                    LogDebug($"- UserAgent: {settings.UserAgent}");
+                    
                     if (!string.IsNullOrEmpty(_pendingNavigationUrl))
                     {
-                        Debug.WriteLine("Executing pending navigation...");
+                        LogDebug("✅ Executing pending navigation...");
+                        LogDebug($"Pending URL: {_pendingNavigationUrl}");
                         AuthWebView.CoreWebView2.Navigate(_pendingNavigationUrl);
                         _pendingNavigationUrl = null;
+                        LogDebug("Pending navigation executed and cleared");
                     }
                     else if (!string.IsNullOrEmpty(_clientId) && _serverStarted)
                     {
-                        Debug.WriteLine("Starting OAuth navigation...");
+                        LogDebug("✅ Starting OAuth navigation...");
                         NavigateToSpotifyAuth();
+                    }
+                    else
+                    {
+                        LogDebug($"⚠️ Cannot start navigation - ClientId: {(!string.IsNullOrEmpty(_clientId) ? "SET" : "NOT SET")}, ServerStarted: {_serverStarted}");
                     }
                 }
                 else
                 {
-                    Debug.WriteLine("❌ WebView2 initialization failed");
+                    LogDebug("❌ WebView2 initialization failed");
                     ShowError("Failed to initialize web browser for OAuth");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Error in WebView2 initialization: {ex.Message}");
+                LogDebug($"❌ Error in WebView2 initialization: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 ShowError($"Error initializing OAuth browser: {ex.Message}");
             }
         }
@@ -633,32 +827,49 @@ namespace EZStreamer.Views
         {
             // Allow all permissions for OAuth
             e.State = CoreWebView2PermissionState.Allow;
-            Debug.WriteLine($"WebView2 permission granted: {e.PermissionKind}");
+            LogDebug($"✅ WebView2 permission granted: {e.PermissionKind}");
         }
 
         private void CoreWebView2_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
         {
-            Debug.WriteLine($"🌐 Navigation starting to: {e.Uri}");
+            LogDebug($"=== Navigation Starting ===");
+            LogDebug($"🌐 Navigation starting to: {e.Uri}");
+            LogDebug($"Navigation ID: {e.NavigationId}");
+            LogDebug($"Is user initiated: {e.IsUserInitiated}");
+            LogDebug($"Is redirected: {e.IsRedirected}");
             
             if (e.Uri.StartsWith(REDIRECT_URI))
             {
-                Debug.WriteLine("✅ Detected HTTPS callback URL - our local server should handle this");
+                LogDebug("✅ Detected HTTPS callback URL - our local server should handle this");
+                LogDebug("This means Spotify is redirecting back to us - authentication may be successful!");
+            }
+            else if (e.Uri.StartsWith("https://accounts.spotify.com"))
+            {
+                LogDebug("✅ Navigation to Spotify authorization page");
+            }
+            else
+            {
+                LogDebug($"⚠️ Unexpected navigation destination: {e.Uri}");
             }
         }
 
         private void CoreWebView2_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            Debug.WriteLine($"🌐 Navigation completed. Success: {e.IsSuccess}");
+            LogDebug($"=== Navigation Completed ===");
+            LogDebug($"🌐 Navigation completed. Success: {e.IsSuccess}");
+            LogDebug($"Navigation ID: {e.NavigationId}");
+            LogDebug($"WebErrorStatus: {e.WebErrorStatus}");
             
             if (!e.IsSuccess)
             {
-                Debug.WriteLine($"❌ Navigation failed with error: {e.WebErrorStatus}");
+                LogDebug($"❌ Navigation failed with error: {e.WebErrorStatus}");
                 
                 // If navigation failed due to certificate issues, provide helpful error
                 if (e.WebErrorStatus.ToString().Contains("Certificate") || 
                     e.WebErrorStatus.ToString().Contains("SSL") ||
                     e.WebErrorStatus.ToString().Contains("Security"))
                 {
+                    LogDebug("🔒 Certificate/SSL error detected");
                     ShowError($"HTTPS certificate error: {e.WebErrorStatus}\n\n" +
                              "This usually means:\n" +
                              "1. EZStreamer needs to run as Administrator\n" +
@@ -667,32 +878,62 @@ namespace EZStreamer.Views
                 }
                 else
                 {
+                    LogDebug($"❌ Other navigation error: {e.WebErrorStatus}");
                     ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
+                }
+            }
+            else
+            {
+                LogDebug("✅ Navigation completed successfully");
+                try
+                {
+                    var currentUrl = AuthWebView.CoreWebView2.Source;
+                    LogDebug($"Current URL after navigation: {currentUrl}");
+                }
+                catch (Exception ex)
+                {
+                    LogDebug($"Error getting current URL: {ex.Message}");
                 }
             }
         }
 
         private void CoreWebView2_DOMContentLoaded(object sender, CoreWebView2DOMContentLoadedEventArgs e)
         {
-            Debug.WriteLine("📄 DOM content loaded");
-            LoadingPanel.Visibility = Visibility.Collapsed;
+            LogDebug("=== DOM Content Loaded ===");
+            LogDebug("📄 DOM content loaded - page is ready");
+            
+            try
+            {
+                var currentUrl = AuthWebView.CoreWebView2.Source;
+                LogDebug($"Page URL: {currentUrl}");
+                
+                // Hide loading panel when page loads
+                LoadingPanel.Visibility = Visibility.Collapsed;
+                LogDebug("Loading panel hidden");
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error in DOMContentLoaded: {ex.Message}");
+            }
         }
 
         // Missing event handler that was referenced in XAML
         private void AuthWebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            Debug.WriteLine($"🌐 WebView Navigation completed. Success: {e.IsSuccess}");
+            LogDebug($"=== WebView NavigationCompleted (XAML Handler) ===");
+            LogDebug($"🌐 WebView Navigation completed. Success: {e.IsSuccess}");
             LoadingPanel.Visibility = Visibility.Collapsed;
             
             if (!e.IsSuccess)
             {
-                Debug.WriteLine($"❌ WebView navigation failed with error: {e.WebErrorStatus}");
+                LogDebug($"❌ WebView navigation failed with error: {e.WebErrorStatus}");
                 
                 // Check for certificate/SSL errors
                 if (e.WebErrorStatus.ToString().Contains("Certificate") || 
                     e.WebErrorStatus.ToString().Contains("SSL") ||
                     e.WebErrorStatus.ToString().Contains("Security"))
                 {
+                    LogDebug("🔒 Certificate/SSL error in XAML handler");
                     ShowError($"HTTPS certificate error: {e.WebErrorStatus}\n\n" +
                              "The self-signed certificate was rejected.\n" +
                              "Please run EZStreamer as Administrator or use manual token authentication.");
@@ -706,6 +947,7 @@ namespace EZStreamer.Views
 
         private void ShowConfigurationNeeded()
         {
+            LogDebug("=== ShowConfigurationNeeded ===");
             LoadingPanel.Visibility = Visibility.Collapsed;
             
             var result = MessageBox.Show(
@@ -717,6 +959,8 @@ namespace EZStreamer.Views
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
                 
+            LogDebug($"Configuration dialog result: {result}");
+            
             if (result == MessageBoxResult.Yes)
             {
                 ShowCredentialsDialog();
@@ -730,6 +974,8 @@ namespace EZStreamer.Views
 
         private void ShowCredentialsDialog()
         {
+            LogDebug("ShowCredentialsDialog - directing user to settings");
+            
             MessageBox.Show(
                 "Please configure your Spotify credentials in the Settings tab:\n\n" +
                 "1. Go to Settings\n" +
@@ -748,6 +994,7 @@ namespace EZStreamer.Views
 
         private string CreateSuccessResponseHtml()
         {
+            LogDebug("Creating success response HTML");
             return @"
 <!DOCTYPE html>
 <html>
@@ -809,6 +1056,7 @@ namespace EZStreamer.Views
 
         private string CreateErrorResponseHtml(string error)
         {
+            LogDebug($"Creating error response HTML for: {error}");
             return $@"
 <!DOCTYPE html>
 <html>
@@ -855,14 +1103,14 @@ namespace EZStreamer.Views
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("User cancelled authentication");
+            LogDebug("User cancelled authentication");
             DialogResult = false;
             Close();
         }
 
         private void ManualTokenButton_Click(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("User requested manual token option");
+            LogDebug("User requested manual token option");
             MessageBox.Show(
                 "Manual token authentication:\n\n" +
                 "1. Go to https://developer.spotify.com/console/get-current-user/\n" +
@@ -877,7 +1125,7 @@ namespace EZStreamer.Views
 
         private void ShowError(string message)
         {
-            Debug.WriteLine($"❌ Showing error to user: {message}");
+            LogDebug($"❌ Showing error to user: {message}");
             MessageBox.Show(message, "Spotify OAuth Error", 
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             
@@ -888,7 +1136,7 @@ namespace EZStreamer.Views
         {
             try
             {
-                Debug.WriteLine("🔄 Cleaning up SpotifyAuthWindow...");
+                LogDebug("=== OnClosed - Cleaning up SpotifyAuthWindow ===");
                 
                 // Stop server
                 _isListening = false;
@@ -898,7 +1146,7 @@ namespace EZStreamer.Views
                 {
                     _httpListener.Stop();
                     _httpListener.Close();
-                    Debug.WriteLine("✅ HTTPS server stopped");
+                    LogDebug("✅ HTTPS server stopped");
                 }
 
                 // Clean up WebView2
@@ -908,16 +1156,18 @@ namespace EZStreamer.Views
                     AuthWebView.CoreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
                     AuthWebView.CoreWebView2.NavigationCompleted -= CoreWebView2_NavigationCompleted;
                     AuthWebView.CoreWebView2.DOMContentLoaded -= CoreWebView2_DOMContentLoaded;
+                    LogDebug("WebView2 event handlers removed");
                 }
                 
                 AuthWebView?.Dispose();
                 _cancellationTokenSource?.Dispose();
                 
-                Debug.WriteLine("✅ SpotifyAuthWindow cleanup completed");
+                LogDebug("✅ SpotifyAuthWindow cleanup completed");
+                LogDebug($"Final state - IsAuthenticated: {IsAuthenticated}, AccessToken: {(!string.IsNullOrEmpty(AccessToken) ? "SET" : "NOT SET")}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Error during cleanup: {ex.Message}");
+                LogDebug($"❌ Error during cleanup: {ex.Message}");
             }
             
             base.OnClosed(e);
