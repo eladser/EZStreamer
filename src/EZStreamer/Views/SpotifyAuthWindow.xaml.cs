@@ -8,6 +8,11 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Generic;
+using System.Net;
+using System.Threading;
+using System.IO;
+using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography;
 
 namespace EZStreamer.Views
 {
@@ -16,8 +21,12 @@ namespace EZStreamer.Views
         private readonly ConfigurationService _configService;
         private string _clientId;
         private string _clientSecret;
-        private const string REDIRECT_URI = "https://eladser.github.io/ezstreamer/auth/spotify/callback";
+        private const string REDIRECT_URI = "https://localhost:8443/callback";
         private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private";
+        
+        private HttpListener _httpListener;
+        private bool _isListening = false;
+        private CancellationTokenSource _cancellationTokenSource;
 
         public string AccessToken { get; private set; }
         public bool IsAuthenticated { get; private set; }
@@ -29,17 +38,343 @@ namespace EZStreamer.Views
             var credentials = _configService.GetAPICredentials();
             _clientId = credentials.SpotifyClientId;
             _clientSecret = credentials.SpotifyClientSecret;
+            _cancellationTokenSource = new CancellationTokenSource();
             
             LoadingPanel.Visibility = Visibility.Visible;
             
-            // Check credentials and start authentication
-            if (string.IsNullOrEmpty(_clientId) || string.IsNullOrEmpty(_clientSecret))
+            // Start local HTTPS server and then initialize auth
+            StartLocalHttpsServer();
+        }
+
+        private void StartLocalHttpsServer()
+        {
+            Task.Run(async () =>
             {
-                ShowConfigurationNeeded();
+                try
+                {
+                    // Try to bind to HTTPS port using HttpListener with certificate
+                    await SetupHttpsListener();
+                    
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (string.IsNullOrEmpty(_clientId) || string.IsNullOrEmpty(_clientSecret))
+                        {
+                            ShowConfigurationNeeded();
+                        }
+                        else
+                        {
+                            InitializeWebAuth();
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => 
+                    {
+                        ShowError($"Failed to start local HTTPS server: {ex.Message}\n\n" +
+                                "This may be due to:\n" +
+                                "1. Port 8443 is already in use\n" +
+                                "2. Administrator privileges are required\n" +
+                                "3. Windows firewall is blocking the connection\n\n" +
+                                "Try running EZStreamer as Administrator, or use manual token authentication instead.");
+                    });
+                }
+            });
+        }
+
+        private async Task SetupHttpsListener()
+        {
+            // Create a simple HTTP listener (we'll handle HTTPS through WebView2's security context)
+            // For local development, we'll use HTTP and rely on Spotify's localhost exception
+            const string HTTP_REDIRECT_URI = "http://localhost:8443/callback";
+            
+            _httpListener = new HttpListener();
+            _httpListener.Prefixes.Add("http://localhost:8443/");
+            
+            try
+            {
+                _httpListener.Start();
+                _isListening = true;
+                
+                System.Diagnostics.Debug.WriteLine("Local HTTP server started on http://localhost:8443/");
+                
+                // Update redirect URI to use HTTP for local development
+                // Spotify allows localhost HTTP redirects for development
+                
+                // Listen for requests
+                while (_isListening && !_cancellationTokenSource.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var context = await GetContextAsync(_httpListener, _cancellationTokenSource.Token);
+                        if (context != null)
+                        {
+                            _ = Task.Run(() => ProcessCallback(context));
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Listener was disposed, exit gracefully
+                        break;
+                    }
+                    catch (HttpListenerException ex) when (ex.ErrorCode == 995)
+                    {
+                        // Operation was aborted, exit gracefully
+                        break;
+                    }
+                }
             }
-            else
+            catch (HttpListenerException ex)
             {
-                InitializeWebAuth();
+                throw new Exception($"Failed to start HTTP listener on port 8443: {ex.Message}");
+            }
+        }
+
+        private async Task<HttpListenerContext> GetContextAsync(HttpListener listener, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var contextTask = listener.GetContextAsync();
+                var tcs = new TaskCompletionSource<bool>();
+                
+                using (cancellationToken.Register(() => tcs.TrySetCanceled()))
+                {
+                    var completedTask = await Task.WhenAny(contextTask, tcs.Task);
+                    if (completedTask == contextTask)
+                    {
+                        return await contextTask;
+                    }
+                    else
+                    {
+                        return null; // Cancelled
+                    }
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task ProcessCallback(HttpListenerContext context)
+        {
+            try
+            {
+                var request = context.Request;
+                var response = context.Response;
+                
+                System.Diagnostics.Debug.WriteLine($"Received callback request: {request.Url}");
+                
+                // Extract authorization code or error from query parameters
+                var query = HttpUtility.ParseQueryString(request.Url.Query);
+                var code = query["code"];
+                var error = query["error"];
+                var state = query["state"];
+                
+                // Send response page
+                string responseHtml;
+                if (!string.IsNullOrEmpty(error))
+                {
+                    responseHtml = CreateErrorResponseHtml(error);
+                    Dispatcher.Invoke(() => ShowError($"OAuth error: {error}"));
+                }
+                else if (!string.IsNullOrEmpty(code))
+                {
+                    responseHtml = CreateSuccessResponseHtml();
+                    // Process the authorization code
+                    await ExchangeCodeForToken(code);
+                }
+                else
+                {
+                    responseHtml = CreateErrorResponseHtml("No authorization code received");
+                    Dispatcher.Invoke(() => ShowError("No authorization code received from Spotify"));
+                }
+                
+                // Send HTML response
+                var buffer = Encoding.UTF8.GetBytes(responseHtml);
+                response.ContentType = "text/html; charset=utf-8";
+                response.ContentLength64 = buffer.Length;
+                response.StatusCode = 200;
+                
+                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                response.OutputStream.Close();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error processing callback: {ex.Message}");
+            }
+        }
+
+        private string CreateSuccessResponseHtml()
+        {
+            return @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Spotify Authentication Success</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #1DB954, #1ed760); 
+            color: white; 
+            margin: 0; 
+            padding: 0; 
+            min-height: 100vh; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        .container { 
+            background: white; 
+            color: #1DB954; 
+            padding: 40px; 
+            border-radius: 15px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+            text-align: center; 
+            max-width: 500px; 
+            margin: 20px;
+        }
+        h1 { margin-top: 0; font-size: 2.5em; }
+        .icon { font-size: 4em; margin-bottom: 20px; }
+        .message { font-size: 1.2em; margin: 20px 0; }
+        .footer { font-size: 0.9em; color: #666; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='icon'>🎵</div>
+        <h1>Success!</h1>
+        <div class='message'>
+            <p><strong>Spotify authentication completed successfully!</strong></p>
+            <p>You can now close this window and return to EZStreamer.</p>
+            <p>Your Spotify account is connected and ready to use.</p>
+        </div>
+        <div class='footer'>
+            <p>This window will close automatically in a few seconds...</p>
+        </div>
+    </div>
+    <script>
+        setTimeout(function() {
+            window.close();
+        }, 3000);
+    </script>
+</body>
+</html>";
+        }
+
+        private string CreateErrorResponseHtml(string error)
+        {
+            return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Spotify Authentication Error</title>
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #ff4444, #cc0000); 
+            color: white; 
+            margin: 0; 
+            padding: 0; 
+            min-height: 100vh; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }}
+        .container {{ 
+            background: white; 
+            color: #cc0000; 
+            padding: 40px; 
+            border-radius: 15px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+            text-align: center; 
+            max-width: 500px; 
+            margin: 20px;
+        }}
+        h1 {{ margin-top: 0; font-size: 2.5em; }}
+        .icon {{ font-size: 4em; margin-bottom: 20px; }}
+        .error {{ background: #ffebee; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='icon'>❌</div>
+        <h1>Authentication Error</h1>
+        <div class='error'>
+            <strong>Error:</strong> {HttpUtility.HtmlEncode(error)}
+        </div>
+        <p>Please close this window and try again in EZStreamer.</p>
+    </div>
+</body>
+</html>";
+        }
+
+        private async Task ExchangeCodeForToken(string authorizationCode)
+        {
+            try
+            {
+                using (var httpClient = new HttpClient())
+                {
+                    // Prepare token exchange request
+                    var requestContent = new FormUrlEncodedContent(new Dictionary<string, string>
+                    {
+                        ["grant_type"] = "authorization_code",
+                        ["code"] = authorizationCode,
+                        ["redirect_uri"] = "http://localhost:8443/callback", // Use HTTP for local development
+                        ["client_id"] = _clientId,
+                        ["client_secret"] = _clientSecret
+                    });
+
+                    System.Diagnostics.Debug.WriteLine("Exchanging authorization code for access token...");
+
+                    // Exchange code for token
+                    var response = await httpClient.PostAsync("https://accounts.spotify.com/api/token", requestContent);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var tokenResponse = JsonSerializer.Deserialize<SpotifyTokenResponse>(responseContent);
+                        
+                        if (!string.IsNullOrEmpty(tokenResponse.access_token))
+                        {
+                            AccessToken = tokenResponse.access_token;
+                            IsAuthenticated = true;
+
+                            System.Diagnostics.Debug.WriteLine($"Access token received successfully");
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                LoadingPanel.Visibility = Visibility.Collapsed;
+                                
+                                MessageBox.Show(
+                                    $"✅ Successfully connected to Spotify!\n\n" +
+                                    $"🔑 Access token received\n" +
+                                    $"⏰ Expires in: {tokenResponse.expires_in} seconds\n" +
+                                    $"🔄 Refresh token: {(!string.IsNullOrEmpty(tokenResponse.refresh_token) ? "Available" : "Not provided")}",
+                                    "Spotify OAuth Success", 
+                                    MessageBoxButton.OK, 
+                                    MessageBoxImage.Information);
+                                
+                                DialogResult = true;
+                                Close();
+                            });
+                        }
+                        else
+                        {
+                            Dispatcher.Invoke(() => ShowError("No access token received from Spotify"));
+                        }
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Token exchange failed: {response.StatusCode} - {responseContent}");
+                        Dispatcher.Invoke(() => ShowError($"Token exchange failed: {response.StatusCode}\n\nDetails: {responseContent}"));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error exchanging code for token: {ex.Message}");
+                Dispatcher.Invoke(() => ShowError($"Error exchanging code for token: {ex.Message}"));
             }
         }
 
@@ -62,8 +397,8 @@ namespace EZStreamer.Views
                 "Spotify Client ID and Secret are required for OAuth authentication.\n\n" +
                 "Would you like to configure them now?\n\n" +
                 "Get them from: https://developer.spotify.com/dashboard\n\n" +
-                "IMPORTANT: Set redirect URI to: " + REDIRECT_URI + "\n" +
-                "And enable 'Authorization Code Flow' in your app settings.",
+                "IMPORTANT: Set redirect URI to: http://localhost:8443/callback\n" +
+                "(Spotify allows HTTP for localhost development)",
                 "OAuth Configuration Required",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
@@ -130,12 +465,12 @@ namespace EZStreamer.Views
                 // Generate state parameter for security
                 var state = Guid.NewGuid().ToString();
 
-                // Build OAuth authorization URL (Authorization Code Flow)
+                // Build OAuth authorization URL (using HTTP for local development)
                 var authUrl = $"https://accounts.spotify.com/authorize" +
                             $"?response_type=code" +
                             $"&client_id={_clientId}" +
                             $"&scope={Uri.EscapeDataString(SCOPES)}" +
-                            $"&redirect_uri={Uri.EscapeDataString(REDIRECT_URI)}" +
+                            $"&redirect_uri={Uri.EscapeDataString("http://localhost:8443/callback")}" +
                             $"&state={state}" +
                             $"&show_dialog=true";
 
@@ -192,174 +527,17 @@ namespace EZStreamer.Views
         {
             System.Diagnostics.Debug.WriteLine($"OAuth navigation to: {e.Uri}");
             
-            // Check if this is our GitHub Pages callback
-            if (e.Uri.StartsWith(REDIRECT_URI))
+            // Check if this is our local callback
+            if (e.Uri.StartsWith("http://localhost:8443/callback"))
             {
-                LoadingPanel.Visibility = Visibility.Visible;
-                // Allow navigation to GitHub Pages callback
-                return;
+                System.Diagnostics.Debug.WriteLine("Detected callback URL, processing...");
+                // Let it proceed to our local server
             }
         }
 
-        private async void CoreWebView2_DOMContentLoaded(object sender, CoreWebView2DOMContentLoadedEventArgs e)
-        {
-            try
-            {
-                // Check if we're on the callback page
-                var currentUrl = AuthWebView.CoreWebView2.Source;
-                if (currentUrl.StartsWith(REDIRECT_URI))
-                {
-                    // The callback page will display the authorization code
-                    // We need to extract it from the page
-                    await Task.Delay(1000); // Give the page time to load and extract the code
-                    
-                    // Try to get the authorization code from the page
-                    var result = await AuthWebView.CoreWebView2.ExecuteScriptAsync(@"
-                        try {
-                            const urlParams = new URLSearchParams(window.location.search);
-                            const code = urlParams.get('code');
-                            const error = urlParams.get('error');
-                            
-                            if (error) {
-                                JSON.stringify({ success: false, error: error });
-                            } else if (code) {
-                                // Display the code to the user
-                                document.body.innerHTML = `
-                                    <div style='font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #1DB954; color: white;'>
-                                        <div style='background: white; color: #1DB954; padding: 30px; border-radius: 10px; max-width: 600px; margin: 0 auto;'>
-                                            <h1>🎵 Authorization Code Received!</h1>
-                                            <p>Copy this authorization code:</p>
-                                            <div style='background: #f0f0f0; padding: 15px; border-radius: 5px; font-family: monospace; margin: 20px 0; word-break: break-all;'>
-                                                ${code}
-                                            </div>
-                                            <p>Click the button below in EZStreamer to continue...</p>
-                                        </div>
-                                    </div>
-                                `;
-                                JSON.stringify({ success: true, code: code });
-                            } else {
-                                JSON.stringify({ success: false, error: 'No code or error found' });
-                            }
-                        } catch (e) {
-                            JSON.stringify({ success: false, error: e.toString() });
-                        }
-                    ");
-
-                    if (!string.IsNullOrEmpty(result))
-                    {
-                        try
-                        {
-                            var authResult = JsonSerializer.Deserialize<AuthResult>(result.Trim('"').Replace("\\\"", "\""));
-                            if (authResult.success && !string.IsNullOrEmpty(authResult.code))
-                            {
-                                // Show code input dialog
-                                ShowCodeInputDialog(authResult.code);
-                            }
-                            else
-                            {
-                                ShowError($"Authentication failed: {authResult.error}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Error parsing auth result: {ex.Message}");
-                            ShowCodeInputDialog(); // Fallback to manual input
-                        }
-                    }
-                    else
-                    {
-                        ShowCodeInputDialog(); // Fallback to manual input
-                    }
-                }
-                else
-                {
-                    LoadingPanel.Visibility = Visibility.Collapsed;
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in DOMContentLoaded: {ex.Message}");
-                LoadingPanel.Visibility = Visibility.Collapsed;
-            }
-        }
-
-        private void ShowCodeInputDialog(string prefilledCode = null)
+        private void CoreWebView2_DOMContentLoaded(object sender, CoreWebView2DOMContentLoadedEventArgs e)
         {
             LoadingPanel.Visibility = Visibility.Collapsed;
-            
-            var dialog = new AuthCodeInputDialog(prefilledCode);
-            if (dialog.ShowDialog() == true)
-            {
-                LoadingPanel.Visibility = Visibility.Visible;
-                _ = Task.Run(async () => await ExchangeCodeForToken(dialog.AuthorizationCode));
-            }
-            else
-            {
-                DialogResult = false;
-                Close();
-            }
-        }
-
-        private async Task ExchangeCodeForToken(string authorizationCode)
-        {
-            try
-            {
-                using (var httpClient = new HttpClient())
-                {
-                    // Prepare token exchange request
-                    var requestContent = new FormUrlEncodedContent(new Dictionary<string, string>
-                    {
-                        ["grant_type"] = "authorization_code",
-                        ["code"] = authorizationCode,
-                        ["redirect_uri"] = REDIRECT_URI,
-                        ["client_id"] = _clientId,
-                        ["client_secret"] = _clientSecret
-                    });
-
-                    // Exchange code for token
-                    var response = await httpClient.PostAsync("https://accounts.spotify.com/api/token", requestContent);
-                    var responseContent = await response.Content.ReadAsStringAsync();
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var tokenResponse = JsonSerializer.Deserialize<SpotifyTokenResponse>(responseContent);
-                        
-                        if (!string.IsNullOrEmpty(tokenResponse.access_token))
-                        {
-                            AccessToken = tokenResponse.access_token;
-                            IsAuthenticated = true;
-
-                            Dispatcher.Invoke(() =>
-                            {
-                                MessageBox.Show(
-                                    $"Successfully connected to Spotify!\n\n" +
-                                    $"Token expires in: {tokenResponse.expires_in} seconds\n" +
-                                    $"Refresh token available: {(!string.IsNullOrEmpty(tokenResponse.refresh_token) ? "Yes" : "No")}",
-                                    "OAuth Success", 
-                                    MessageBoxButton.OK, 
-                                    MessageBoxImage.Information);
-                                
-                                DialogResult = true;
-                                Close();
-                            });
-
-                            System.Diagnostics.Debug.WriteLine($"Access token received: {AccessToken.Substring(0, 10)}...");
-                        }
-                        else
-                        {
-                            Dispatcher.Invoke(() => ShowError("No access token received from Spotify"));
-                        }
-                    }
-                    else
-                    {
-                        Dispatcher.Invoke(() => ShowError($"Token exchange failed: {response.StatusCode}\n{responseContent}"));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Dispatcher.Invoke(() => ShowError($"Error exchanging code for token: {ex.Message}"));
-            }
         }
 
         private void AuthWebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -379,7 +557,38 @@ namespace EZStreamer.Views
 
         private void ManualTokenButton_Click(object sender, RoutedEventArgs e)
         {
-            ShowError("This window is configured for OAuth with Client ID and Secret.\nManual tokens are not needed with proper OAuth flow.");
+            var result = MessageBox.Show(
+                "Do you want to use manual token authentication instead?\n\n" +
+                "This will open the Spotify Web Console where you can generate a token manually.",
+                "Manual Token Authentication",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://developer.spotify.com/console/get-current-user/",
+                        UseShellExecute = true
+                    });
+                    
+                    MessageBox.Show(
+                        "Manual token steps:\n\n" +
+                        "1. Click 'Get Token' on the opened webpage\n" +
+                        "2. Select the required scopes\n" +
+                        "3. Copy the generated token\n" +
+                        "4. Use the 'Manual Token' option in EZStreamer settings",
+                        "Manual Token Instructions",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    ShowError($"Could not open browser: {ex.Message}");
+                }
+            }
         }
 
         private void ShowError(string message)
@@ -394,6 +603,16 @@ namespace EZStreamer.Views
         {
             try
             {
+                // Stop the HTTP listener
+                _isListening = false;
+                _cancellationTokenSource?.Cancel();
+                
+                if (_httpListener != null && _httpListener.IsListening)
+                {
+                    _httpListener.Stop();
+                    _httpListener.Close();
+                }
+
                 // Clean up WebView2
                 if (AuthWebView?.CoreWebView2 != null)
                 {
@@ -402,6 +621,7 @@ namespace EZStreamer.Views
                 }
                 
                 AuthWebView?.Dispose();
+                _cancellationTokenSource?.Dispose();
             }
             catch
             {
@@ -422,7 +642,7 @@ namespace EZStreamer.Views
 
     // Response model for Spotify token exchange
     public class SpotifyTokenResponse
-    {
+    {    
         public string access_token { get; set; }
         public string token_type { get; set; }
         public string scope { get; set; }
