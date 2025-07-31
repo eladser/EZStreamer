@@ -145,8 +145,8 @@ namespace EZStreamer.Services
                                   TimeSpan.FromSeconds(12) : // Demo: 12 seconds instead of full song
                                   TimeSpan.FromSeconds(12);
                 
-                // Start a task to mark the song as ended after duration
-                Task.Run(async () =>
+                // Start a task to mark the song as ended after duration - FIXED: Added await
+                _ = Task.Run(async () =>
                 {
                     try
                     {
