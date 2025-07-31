@@ -14,7 +14,6 @@ using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
 using System.IO;
-using System.Management;
 
 namespace EZStreamer.Views
 {
@@ -662,7 +661,7 @@ namespace EZStreamer.Views
                     process.StartInfo.RedirectStandardError = true;
                     process.StartInfo.UseShellExecute = false;
                     process.StartInfo.CreateNoWindow = true;
-                    process.StartInfo.Verb = "runas"; // Request elevation
+                    process.StartInfo.Verb = "runas"; // Request elevation if needed
                     
                     process.Start();
                     var output = process.StandardOutput.ReadToEnd();
