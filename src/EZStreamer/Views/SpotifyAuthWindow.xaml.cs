@@ -11,6 +11,7 @@ using System.Threading;
 using System.Security.Cryptography.X509Certificates;
 using System.Net.Security;
 using System.Text.Json;
+using System.Collections.Generic;
 
 namespace EZStreamer.Views
 {
@@ -181,23 +182,14 @@ namespace EZStreamer.Views
             {
                 using (var httpClient = new HttpClient())
                 {
-                    // Prepare token exchange request
-                    var tokenRequest = new
+                    // Prepare token exchange request using FormUrlEncodedContent
+                    var requestContent = new FormUrlEncodedContent(new Dictionary<string, string>
                     {
-                        grant_type = "authorization_code",
-                        code = authorizationCode,
-                        redirect_uri = REDIRECT_URI,
-                        client_id = _clientId,
-                        client_secret = _clientSecret
-                    };
-
-                    var requestContent = new FormUrlEncodedContent(new[]
-                    {
-                        new KeyValuePair<string, string>("grant_type", "authorization_code"),
-                        new KeyValuePair<string, string>("code", authorizationCode),
-                        new KeyValuePair<string, string>("redirect_uri", REDIRECT_URI),
-                        new KeyValuePair<string, string>("client_id", _clientId),
-                        new KeyValuePair<string, string>("client_secret", _clientSecret)
+                        ["grant_type"] = "authorization_code",
+                        ["code"] = authorizationCode,
+                        ["redirect_uri"] = REDIRECT_URI,
+                        ["client_id"] = _clientId,
+                        ["client_secret"] = _clientSecret
                     });
 
                     // Exchange code for token
