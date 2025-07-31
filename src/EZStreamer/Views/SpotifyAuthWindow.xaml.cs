@@ -31,6 +31,7 @@ namespace EZStreamer.Views
         private bool _serverStarted = false;
         private int _debugCounter = 0;
         private X509Certificate2 _serverCertificate;
+        private string _pendingNavigationUrl;
 
         public string AccessToken { get; private set; }
         public bool IsAuthenticated { get; private set; }
@@ -977,25 +978,82 @@ namespace EZStreamer.Views
             this.Loaded -= SpotifyAuthWindow_Loaded;
             LogDebug("Window Loaded event handler detached");
             
-            // Small delay to ensure everything is ready
-            LogDebug("Starting navigation delay (500ms)...");
-            Task.Delay(500).ContinueWith(_ =>
+            // Initialize WebView2 immediately if server is ready
+            if (_serverStarted)
             {
-                Dispatcher.Invoke(() =>
+                LogDebug("✅ HTTPS server confirmed started, initializing WebView2...");
+                InitializeWebView2();
+            }
+            else
+            {
+                LogDebug("❌ HTTPS server not started, cannot proceed");
+                ShowError("HTTPS server failed to start. Spotify requires HTTPS for OAuth.\n\nPlease run EZStreamer as Administrator.");
+            }
+        }
+
+        private async void InitializeWebView2()
+        {
+            try
+            {
+                LogDebug("=== InitializeWebView2 Started ===");
+                
+                // Ensure WebView2 is properly initialized
+                if (AuthWebView.CoreWebView2 == null)
                 {
-                    LogDebug($"Navigation delay complete. Server started: {_serverStarted}");
-                    if (_serverStarted)
-                    {
-                        LogDebug("✅ HTTPS server confirmed started, navigating to Spotify...");
-                        NavigateToSpotifyAuth();
-                    }
-                    else
-                    {
-                        LogDebug("❌ HTTPS server not started, cannot proceed");
-                        ShowError("HTTPS server failed to start. Spotify requires HTTPS for OAuth.\n\nPlease run EZStreamer as Administrator.");
-                    }
-                });
-            });
+                    LogDebug("WebView2 not initialized, starting initialization...");
+                    
+                    // Set up initialization completion handler
+                    AuthWebView.CoreWebView2InitializationCompleted += AuthWebView_CoreWebView2InitializationCompleted;
+                    
+                    // Force WebView2 initialization
+                    LogDebug("Calling EnsureCoreWebView2Async...");
+                    await AuthWebView.EnsureCoreWebView2Async();
+                    LogDebug("EnsureCoreWebView2Async completed");
+                }
+                else
+                {
+                    LogDebug("WebView2 already initialized, setting up immediately");
+                    SetupWebView2AndNavigate();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Error initializing WebView2: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
+                ShowError($"Failed to initialize web browser: {ex.Message}\n\nPlease try again or use manual token authentication.");
+            }
+        }
+
+        private void SetupWebView2AndNavigate()
+        {
+            try
+            {
+                LogDebug("=== SetupWebView2AndNavigate Started ===");
+                
+                // Configure WebView2 settings
+                var settings = AuthWebView.CoreWebView2.Settings;
+                settings.IsGeneralAutofillEnabled = false;
+                settings.IsWebMessageEnabled = true;
+                settings.UserAgent = "EZStreamer/1.0 Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+                
+                LogDebug($"WebView2 settings configured:");
+                LogDebug($"- IsGeneralAutofillEnabled: {settings.IsGeneralAutofillEnabled}");
+                LogDebug($"- IsWebMessageEnabled: {settings.IsWebMessageEnabled}");
+                LogDebug($"- UserAgent: {settings.UserAgent}");
+                
+                // Hide loading panel
+                LoadingPanel.Visibility = Visibility.Collapsed;
+                LogDebug("Loading panel hidden");
+                
+                // Navigate to Spotify OAuth
+                LogDebug("Starting navigation to Spotify OAuth...");
+                NavigateToSpotifyAuth();
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Error in SetupWebView2AndNavigate: {ex.Message}");
+                ShowError($"Error setting up web browser: {ex.Message}");
+            }
         }
 
         private void NavigateToSpotifyAuth()
@@ -1044,8 +1102,6 @@ namespace EZStreamer.Views
             }
         }
 
-        private string _pendingNavigationUrl;
-
         private void AuthWebView_CoreWebView2InitializationCompleted(object sender, CoreWebView2InitializationCompletedEventArgs e)
         {
             try
@@ -1065,33 +1121,8 @@ namespace EZStreamer.Views
                     
                     LogDebug("Event handlers attached");
                     
-                    // Allow insecure content for localhost
-                    var settings = AuthWebView.CoreWebView2.Settings;
-                    settings.IsGeneralAutofillEnabled = false;
-                    settings.IsWebMessageEnabled = true;
-                    
-                    LogDebug($"WebView2 settings configured:");
-                    LogDebug($"- IsGeneralAutofillEnabled: {settings.IsGeneralAutofillEnabled}");
-                    LogDebug($"- IsWebMessageEnabled: {settings.IsWebMessageEnabled}");
-                    LogDebug($"- UserAgent: {settings.UserAgent}");
-                    
-                    if (!string.IsNullOrEmpty(_pendingNavigationUrl))
-                    {
-                        LogDebug("✅ Executing pending navigation...");
-                        LogDebug($"Pending URL: {_pendingNavigationUrl}");
-                        AuthWebView.CoreWebView2.Navigate(_pendingNavigationUrl);
-                        _pendingNavigationUrl = null;
-                        LogDebug("Pending navigation executed and cleared");
-                    }
-                    else if (!string.IsNullOrEmpty(_clientId) && _serverStarted)
-                    {
-                        LogDebug("✅ Starting OAuth navigation...");
-                        NavigateToSpotifyAuth();
-                    }
-                    else
-                    {
-                        LogDebug($"⚠️ Cannot start navigation - ClientId: {(!string.IsNullOrEmpty(_clientId) ? "SET" : "NOT SET")}, ServerStarted: {_serverStarted}");
-                    }
+                    // Now setup and navigate
+                    SetupWebView2AndNavigate();
                 }
                 else
                 {
