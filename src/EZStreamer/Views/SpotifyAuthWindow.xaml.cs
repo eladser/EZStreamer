@@ -88,7 +88,7 @@ namespace EZStreamer.Views
                         {
                             ShowError($"Failed to start local HTTPS server: {ex.Message}\n\n" +
                                     "This requires administrator privileges to bind HTTPS certificate.\n\n" +
-                                    "Please run EZStreamer as Administrator, or try the manual token option.");
+                                    "Please run EZStreamer as Administrator, or use the manual token option.");
                         });
                     }
                 });
@@ -106,7 +106,7 @@ namespace EZStreamer.Views
             {
                 Debug.WriteLine("Setting up HTTPS certificate for localhost:8443...");
                 
-                // First, try to set up certificate binding
+                // Create and install certificate
                 await SetupHttpsCertificate();
                 
                 Debug.WriteLine("Creating HttpListener for HTTPS...");
@@ -159,35 +159,44 @@ namespace EZStreamer.Views
                 // Create a self-signed certificate for localhost
                 var cert = CreateSelfSignedCertificate();
                 
-                // Try to bind the certificate to port 8443
+                // Try to install certificate to trusted root store
                 await Task.Run(() =>
                 {
                     try
                     {
-                        // Export certificate to temporary file
-                        var certPath = Path.GetTempFileName() + ".pfx";
-                        var password = "temp123";
-                        File.WriteAllBytes(certPath, cert.Export(X509ContentType.Pfx, password));
-                        
-                        Debug.WriteLine($"Certificate exported to: {certPath}");
-                        
-                        // Use netsh to bind certificate (requires admin privileges)
-                        var thumbprint = cert.Thumbprint;
-                        Debug.WriteLine($"Certificate thumbprint: {thumbprint}");
-                        
-                        // Note: This requires administrator privileges
-                        var netshCmd = $"http add sslcert ipport=0.0.0.0:8443 certhash={thumbprint} appid={{12345678-1234-1234-1234-123456789012}}";
-                        Debug.WriteLine($"Would execute: netsh {netshCmd}");
-                        
-                        // For now, we'll try without netsh and let HttpListener handle it
-                        Debug.WriteLine("Proceeding without netsh certificate binding - HttpListener will handle HTTPS");
-                        
-                        // Clean up temp file
-                        try { File.Delete(certPath); } catch { }
+                        using (var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser))
+                        {
+                            store.Open(OpenFlags.ReadWrite);
+                            
+                            // Check if certificate already exists
+                            var existingCerts = store.Certificates.Find(X509FindType.FindByThumbprint, cert.Thumbprint, false);
+                            if (existingCerts.Count == 0)
+                            {
+                                store.Add(cert);
+                                Debug.WriteLine($"✅ Certificate added to trusted root store. Thumbprint: {cert.Thumbprint}");
+                            }
+                            else
+                            {
+                                Debug.WriteLine($"✅ Certificate already exists in trusted root store. Thumbprint: {cert.Thumbprint}");
+                            }
+                            
+                            store.Close();
+                        }
+
+                        // Try to bind certificate using netsh (requires admin)
+                        if (IsRunningAsAdministrator())
+                        {
+                            Debug.WriteLine("Running as administrator, attempting certificate binding...");
+                            BindCertificateToPort(cert.Thumbprint);
+                        }
+                        else
+                        {
+                            Debug.WriteLine("Not running as administrator, skipping certificate binding");
+                        }
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Certificate binding warning: {ex.Message}");
+                        Debug.WriteLine($"Certificate installation warning: {ex.Message}");
                         // Continue anyway - HttpListener might work without explicit binding
                     }
                 });
@@ -196,6 +205,81 @@ namespace EZStreamer.Views
             {
                 Debug.WriteLine($"Certificate setup warning: {ex.Message}");
                 // Continue anyway - we'll try HTTPS without custom certificate
+            }
+        }
+
+        private bool IsRunningAsAdministrator()
+        {
+            try
+            {
+                var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                var principal = new System.Security.Principal.WindowsPrincipal(identity);
+                return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void BindCertificateToPort(string thumbprint)
+        {
+            try
+            {
+                // Remove any existing binding
+                var deleteCmd = "netsh http delete sslcert ipport=0.0.0.0:8443";
+                RunNetshCommand(deleteCmd);
+
+                // Add new binding
+                var appId = "{12345678-1234-1234-1234-123456789012}";
+                var addCmd = $"netsh http add sslcert ipport=0.0.0.0:8443 certhash={thumbprint} appid={appId}";
+                var result = RunNetshCommand(addCmd);
+                
+                if (result.Contains("successfully"))
+                {
+                    Debug.WriteLine("✅ Certificate successfully bound to port 8443");
+                }
+                else
+                {
+                    Debug.WriteLine($"Certificate binding result: {result}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Certificate binding error: {ex.Message}");
+            }
+        }
+
+        private string RunNetshCommand(string command)
+        {
+            try
+            {
+                using (var process = new Process())
+                {
+                    process.StartInfo.FileName = "cmd.exe";
+                    process.StartInfo.Arguments = $"/c {command}";
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.RedirectStandardError = true;
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+                    
+                    process.Start();
+                    var output = process.StandardOutput.ReadToEnd();
+                    var error = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    Debug.WriteLine($"Netsh command: {command}");
+                    Debug.WriteLine($"Output: {output}");
+                    if (!string.IsNullOrEmpty(error))
+                        Debug.WriteLine($"Error: {error}");
+                    
+                    return output + error;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to run netsh command: {ex.Message}");
+                return ex.Message;
             }
         }
 
@@ -211,19 +295,28 @@ namespace EZStreamer.Views
                     var sanBuilder = new SubjectAlternativeNameBuilder();
                     sanBuilder.AddDnsName("localhost");
                     sanBuilder.AddIpAddress(IPAddress.Loopback);
+                    sanBuilder.AddIpAddress(IPAddress.IPv6Loopback);
                     request.CertificateExtensions.Add(sanBuilder.Build());
                     
-                    // Set certificate as CA
+                    // Set certificate as server authentication
                     request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
                     
                     // Set key usage
                     request.CertificateExtensions.Add(new X509KeyUsageExtension(
                         X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, false));
+                        
+                    // Set extended key usage for server authentication
+                    var oid = new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1"); // Server Authentication
+                    request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([oid], false));
                     
                     // Create the certificate
                     var certificate = request.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(1));
                     
                     Debug.WriteLine("✅ Self-signed certificate created successfully");
+                    Debug.WriteLine($"Subject: {certificate.Subject}");
+                    Debug.WriteLine($"Thumbprint: {certificate.Thumbprint}");
+                    Debug.WriteLine($"Valid from: {certificate.NotBefore} to {certificate.NotAfter}");
+                    
                     return certificate;
                 }
             }
@@ -500,9 +593,16 @@ namespace EZStreamer.Views
                 
                 if (e.IsSuccess)
                 {
+                    // Configure WebView2 to accept our self-signed certificate
+                    AuthWebView.CoreWebView2.PermissionRequested += CoreWebView2_PermissionRequested;
                     AuthWebView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
                     AuthWebView.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
                     AuthWebView.CoreWebView2.DOMContentLoaded += CoreWebView2_DOMContentLoaded;
+                    
+                    // Allow insecure content for localhost
+                    var settings = AuthWebView.CoreWebView2.Settings;
+                    settings.IsGeneralAutofillEnabled = false;
+                    settings.IsWebMessageEnabled = true;
                     
                     if (!string.IsNullOrEmpty(_pendingNavigationUrl))
                     {
@@ -529,6 +629,13 @@ namespace EZStreamer.Views
             }
         }
 
+        private void CoreWebView2_PermissionRequested(object sender, CoreWebView2PermissionRequestedEventArgs e)
+        {
+            // Allow all permissions for OAuth
+            e.State = CoreWebView2PermissionState.Allow;
+            Debug.WriteLine($"WebView2 permission granted: {e.PermissionKind}");
+        }
+
         private void CoreWebView2_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
         {
             Debug.WriteLine($"🌐 Navigation starting to: {e.Uri}");
@@ -546,7 +653,22 @@ namespace EZStreamer.Views
             if (!e.IsSuccess)
             {
                 Debug.WriteLine($"❌ Navigation failed with error: {e.WebErrorStatus}");
-                ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
+                
+                // If navigation failed due to certificate issues, provide helpful error
+                if (e.WebErrorStatus.ToString().Contains("Certificate") || 
+                    e.WebErrorStatus.ToString().Contains("SSL") ||
+                    e.WebErrorStatus.ToString().Contains("Security"))
+                {
+                    ShowError($"HTTPS certificate error: {e.WebErrorStatus}\n\n" +
+                             "This usually means:\n" +
+                             "1. EZStreamer needs to run as Administrator\n" +
+                             "2. Windows is blocking the self-signed certificate\n\n" +
+                             "Please try running EZStreamer as Administrator or use manual token authentication.");
+                }
+                else
+                {
+                    ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
+                }
             }
         }
 
@@ -565,7 +687,20 @@ namespace EZStreamer.Views
             if (!e.IsSuccess)
             {
                 Debug.WriteLine($"❌ WebView navigation failed with error: {e.WebErrorStatus}");
-                ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
+                
+                // Check for certificate/SSL errors
+                if (e.WebErrorStatus.ToString().Contains("Certificate") || 
+                    e.WebErrorStatus.ToString().Contains("SSL") ||
+                    e.WebErrorStatus.ToString().Contains("Security"))
+                {
+                    ShowError($"HTTPS certificate error: {e.WebErrorStatus}\n\n" +
+                             "The self-signed certificate was rejected.\n" +
+                             "Please run EZStreamer as Administrator or use manual token authentication.");
+                }
+                else
+                {
+                    ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
+                }
             }
         }
 
@@ -595,8 +730,6 @@ namespace EZStreamer.Views
 
         private void ShowCredentialsDialog()
         {
-            // This would show credential input dialogs
-            // For now, direct user to settings
             MessageBox.Show(
                 "Please configure your Spotify credentials in the Settings tab:\n\n" +
                 "1. Go to Settings\n" +
@@ -771,6 +904,7 @@ namespace EZStreamer.Views
                 // Clean up WebView2
                 if (AuthWebView?.CoreWebView2 != null)
                 {
+                    AuthWebView.CoreWebView2.PermissionRequested -= CoreWebView2_PermissionRequested;
                     AuthWebView.CoreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
                     AuthWebView.CoreWebView2.NavigationCompleted -= CoreWebView2_NavigationCompleted;
                     AuthWebView.CoreWebView2.DOMContentLoaded -= CoreWebView2_DOMContentLoaded;
