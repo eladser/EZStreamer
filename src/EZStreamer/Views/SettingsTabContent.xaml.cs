@@ -17,6 +17,7 @@ namespace EZStreamer.Views
         private readonly ConfigurationService _configService;
         private readonly SettingsService _settingsService;
         private readonly OverlayService _overlayService;
+        private bool _isInitializing = true;
 
         public SettingsTabContent()
         {
@@ -26,6 +27,7 @@ namespace EZStreamer.Views
             _overlayService = new OverlayService();
             
             LoadCurrentSettings();
+            _isInitializing = false; // Allow saving after initialization
         }
 
         private void LoadCurrentSettings()
@@ -50,92 +52,144 @@ namespace EZStreamer.Views
 
         private void UpdateCredentialsStatus(APICredentials credentials)
         {
-            // Update Twitch status
-            if (!string.IsNullOrEmpty(credentials.TwitchClientId))
+            try
             {
-                TwitchClientIdTextBox.Text = credentials.TwitchClientId;
-                TwitchStatusSettings.Style = (Style)FindResource("ConnectedStatus");
-            }
-            else
-            {
-                TwitchClientIdTextBox.Text = "";
-                TwitchStatusSettings.Style = (Style)FindResource("DisconnectedStatus");
-            }
+                // Update Twitch status
+                if (!string.IsNullOrEmpty(credentials?.TwitchClientId))
+                {
+                    if (TwitchClientIdTextBox != null)
+                        TwitchClientIdTextBox.Text = credentials.TwitchClientId;
+                    if (TwitchStatusSettings != null)
+                        TwitchStatusSettings.Style = (Style)FindResource("ConnectedStatus");
+                }
+                else
+                {
+                    if (TwitchClientIdTextBox != null)
+                        TwitchClientIdTextBox.Text = "";
+                    if (TwitchStatusSettings != null)
+                        TwitchStatusSettings.Style = (Style)FindResource("DisconnectedStatus");
+                }
 
-            // Update Spotify status
-            if (!string.IsNullOrEmpty(credentials.SpotifyClientId))
-            {
-                SpotifyClientIdTextBox.Text = credentials.SpotifyClientId;
-                SpotifyStatusSettings.Style = (Style)FindResource("ConnectedStatus");
-            }
-            else
-            {
-                SpotifyClientIdTextBox.Text = "";
-                SpotifyStatusSettings.Style = (Style)FindResource("DisconnectedStatus");
-            }
+                // Update Spotify status
+                if (!string.IsNullOrEmpty(credentials?.SpotifyClientId))
+                {
+                    if (SpotifyClientIdTextBox != null)
+                        SpotifyClientIdTextBox.Text = credentials.SpotifyClientId;
+                    if (SpotifyStatusSettings != null)
+                        SpotifyStatusSettings.Style = (Style)FindResource("ConnectedStatus");
+                }
+                else
+                {
+                    if (SpotifyClientIdTextBox != null)
+                        SpotifyClientIdTextBox.Text = "";
+                    if (SpotifyStatusSettings != null)
+                        SpotifyStatusSettings.Style = (Style)FindResource("DisconnectedStatus");
+                }
 
-            // Update YouTube status
-            if (!string.IsNullOrEmpty(credentials.YouTubeAPIKey))
-            {
-                YouTubeAPIKeyTextBox.Text = credentials.YouTubeAPIKey;
-                YouTubeStatusSettings.Style = (Style)FindResource("ConnectedStatus");
+                // Update YouTube status
+                if (!string.IsNullOrEmpty(credentials?.YouTubeAPIKey))
+                {
+                    if (YouTubeAPIKeyTextBox != null)
+                        YouTubeAPIKeyTextBox.Text = credentials.YouTubeAPIKey;
+                    if (YouTubeStatusSettings != null)
+                        YouTubeStatusSettings.Style = (Style)FindResource("ConnectedStatus");
+                }
+                else
+                {
+                    if (YouTubeAPIKeyTextBox != null)
+                        YouTubeAPIKeyTextBox.Text = "";
+                    if (YouTubeStatusSettings != null)
+                        YouTubeStatusSettings.Style = (Style)FindResource("DisconnectedStatus");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                YouTubeAPIKeyTextBox.Text = "";
-                YouTubeStatusSettings.Style = (Style)FindResource("DisconnectedStatus");
+                Debug.WriteLine($"Error updating credentials status: {ex.Message}");
             }
         }
 
         private void LoadSettingsIntoUI(AppSettings settings)
         {
-            // Chat settings
-            EnableChatCommandsCheckBox.IsChecked = settings.EnableChatCommands;
-            EnableChannelPointsCheckBox.IsChecked = settings.EnableChannelPoints;
-            MaxQueueLengthTextBox.Text = settings.MaxQueueLength.ToString();
-            ChatCommandTextBox.Text = settings.ChatCommand;
-            RequestCooldownTextBox.Text = settings.SongRequestCooldown.ToString();
-
-            // Music settings
-            PreferredMusicSourceComboBox.SelectedIndex = settings.PreferredMusicSource == "Spotify" ? 0 : 1;
-            AutoPlayNextSongCheckBox.IsChecked = settings.AutoPlayNextSong;
-
-            // OBS settings
-            OBSServerTextBox.Text = settings.OBSServerIP;
-            OBSPortTextBox.Text = settings.OBSServerPort.ToString();
-            OBSAutoConnectCheckBox.IsChecked = settings.OBSAutoConnect;
-            OBSSceneSwitchingCheckBox.IsChecked = settings.OBSSceneSwitchingEnabled;
-
-            // Overlay settings
-            var overlayThemeIndex = settings.OverlayTheme switch
+            try
             {
-                "Minimal" => 1,
-                "Neon" => 2,
-                "Classic" => 3,
-                _ => 0
-            };
-            OverlayThemeComboBox.SelectedIndex = overlayThemeIndex;
-            OverlayShowAlbumArtCheckBox.IsChecked = settings.OverlayShowAlbumArt;
-            OverlayShowRequesterCheckBox.IsChecked = settings.OverlayShowRequester;
-            OverlayDurationTextBox.Text = settings.OverlayDisplayDuration.ToString();
+                if (settings == null) return;
 
-            // Advanced settings
-            AllowExplicitContentCheckBox.IsChecked = settings.AllowExplicitContent;
-            RequireFollowersOnlyCheckBox.IsChecked = settings.RequireFollowersOnly;
-            RequireSubscribersOnlyCheckBox.IsChecked = settings.RequireSubscribersOnly;
-            MinDurationTextBox.Text = settings.MinStreamDuration.ToString();
-            MaxDurationTextBox.Text = settings.MaxStreamDuration.ToString();
+                // Chat settings
+                if (EnableChatCommandsCheckBox != null)
+                    EnableChatCommandsCheckBox.IsChecked = settings.EnableChatCommands;
+                if (EnableChannelPointsCheckBox != null)
+                    EnableChannelPointsCheckBox.IsChecked = settings.EnableChannelPoints;
+                if (MaxQueueLengthTextBox != null)
+                    MaxQueueLengthTextBox.Text = settings.MaxQueueLength.ToString();
+                if (ChatCommandTextBox != null)
+                    ChatCommandTextBox.Text = settings.ChatCommand ?? "";
+                if (RequestCooldownTextBox != null)
+                    RequestCooldownTextBox.Text = settings.SongRequestCooldown.ToString();
 
-            // Set overlay path
-            OverlayPathTextBox.Text = _overlayService.OverlayFolderPath;
+                // Music settings
+                if (PreferredMusicSourceComboBox != null)
+                    PreferredMusicSourceComboBox.SelectedIndex = settings.PreferredMusicSource == "Spotify" ? 0 : 1;
+                if (AutoPlayNextSongCheckBox != null)
+                    AutoPlayNextSongCheckBox.IsChecked = settings.AutoPlayNextSong;
+
+                // OBS settings
+                if (OBSServerTextBox != null)
+                    OBSServerTextBox.Text = settings.OBSServerIP ?? "";
+                if (OBSPortTextBox != null)
+                    OBSPortTextBox.Text = settings.OBSServerPort.ToString();
+                if (OBSAutoConnectCheckBox != null)
+                    OBSAutoConnectCheckBox.IsChecked = settings.OBSAutoConnect;
+                if (OBSSceneSwitchingCheckBox != null)
+                    OBSSceneSwitchingCheckBox.IsChecked = settings.OBSSceneSwitchingEnabled;
+
+                // Overlay settings
+                if (OverlayThemeComboBox != null)
+                {
+                    var overlayThemeIndex = settings.OverlayTheme switch
+                    {
+                        "Minimal" => 1,
+                        "Neon" => 2,
+                        "Classic" => 3,
+                        _ => 0
+                    };
+                    OverlayThemeComboBox.SelectedIndex = overlayThemeIndex;
+                }
+                
+                if (OverlayShowAlbumArtCheckBox != null)
+                    OverlayShowAlbumArtCheckBox.IsChecked = settings.OverlayShowAlbumArt;
+                if (OverlayShowRequesterCheckBox != null)
+                    OverlayShowRequesterCheckBox.IsChecked = settings.OverlayShowRequester;
+                if (OverlayDurationTextBox != null)
+                    OverlayDurationTextBox.Text = settings.OverlayDisplayDuration.ToString();
+
+                // Advanced settings
+                if (AllowExplicitContentCheckBox != null)
+                    AllowExplicitContentCheckBox.IsChecked = settings.AllowExplicitContent;
+                if (RequireFollowersOnlyCheckBox != null)
+                    RequireFollowersOnlyCheckBox.IsChecked = settings.RequireFollowersOnly;
+                if (RequireSubscribersOnlyCheckBox != null)
+                    RequireSubscribersOnlyCheckBox.IsChecked = settings.RequireSubscribersOnly;
+                if (MinDurationTextBox != null)
+                    MinDurationTextBox.Text = settings.MinStreamDuration.ToString();
+                if (MaxDurationTextBox != null)
+                    MaxDurationTextBox.Text = settings.MaxStreamDuration.ToString();
+
+                // Set overlay path
+                if (OverlayPathTextBox != null && _overlayService != null)
+                    OverlayPathTextBox.Text = _overlayService.OverlayFolderPath ?? "";
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading settings into UI: {ex.Message}");
+            }
         }
 
         private void SaveTwitchCredentials_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var clientId = TwitchClientIdTextBox.Text.Trim();
-                var clientSecret = TwitchClientSecretTextBox.Password.Trim();
+                var clientId = TwitchClientIdTextBox?.Text?.Trim() ?? "";
+                var clientSecret = TwitchClientSecretTextBox?.Password?.Trim() ?? "";
 
                 if (string.IsNullOrEmpty(clientId))
                 {
@@ -161,8 +215,8 @@ namespace EZStreamer.Views
         {
             try
             {
-                var clientId = SpotifyClientIdTextBox.Text.Trim();
-                var clientSecret = SpotifyClientSecretTextBox.Password.Trim();
+                var clientId = SpotifyClientIdTextBox?.Text?.Trim() ?? "";
+                var clientSecret = SpotifyClientSecretTextBox?.Password?.Trim() ?? "";
 
                 if (string.IsNullOrEmpty(clientId))
                 {
@@ -188,7 +242,7 @@ namespace EZStreamer.Views
         {
             try
             {
-                var apiKey = YouTubeAPIKeyTextBox.Text.Trim();
+                var apiKey = YouTubeAPIKeyTextBox?.Text?.Trim() ?? "";
 
                 if (string.IsNullOrEmpty(apiKey))
                 {
@@ -290,8 +344,8 @@ namespace EZStreamer.Views
                 // Show options for authentication
                 var result = MessageBox.Show(
                     "Choose authentication method:\n\n" +
-                    "YES - Use web browser (may have issues)\n" +
-                    "NO - Enter token manually (recommended)\n" +
+                    "YES - Use HTTPS OAuth (recommended)\n" +
+                    "NO - Enter token manually\n" +
                     "CANCEL - Cancel authentication",
                     "Spotify Authentication Method",
                     MessageBoxButton.YesNoCancel,
@@ -317,7 +371,15 @@ namespace EZStreamer.Views
                 }
                 else
                 {
-                    // Web authentication
+                    // Web authentication with HTTPS
+                    MessageBox.Show(
+                        "Starting HTTPS OAuth authentication...\n\n" +
+                        "This requires Administrator privileges to bind HTTPS certificate.\n" +
+                        "If it fails, please run EZStreamer as Administrator or use manual token entry.",
+                        "HTTPS OAuth Authentication",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                        
                     var authWindow = new SpotifyAuthWindow();
                     if (authWindow.ShowDialog() == true)
                     {
@@ -358,7 +420,8 @@ namespace EZStreamer.Views
 
         private void PreferredMusicSource_Changed(object sender, SelectionChangedEventArgs e)
         {
-            SaveCurrentSettings();
+            if (!_isInitializing)
+                SaveCurrentSettings();
         }
 
         private async void ConnectOBS_Click(object sender, RoutedEventArgs e)
@@ -366,9 +429,9 @@ namespace EZStreamer.Views
             try
             {
                 var obsService = new OBSService();
-                var serverIP = OBSServerTextBox.Text.Trim();
-                var serverPort = int.TryParse(OBSPortTextBox.Text, out int port) ? port : 4455;
-                var password = OBSPasswordBox.Password;
+                var serverIP = OBSServerTextBox?.Text?.Trim() ?? "";
+                var serverPort = int.TryParse(OBSPortTextBox?.Text, out int port) ? port : 4455;
+                var password = OBSPasswordBox?.Password ?? "";
 
                 var success = await obsService.ConnectAsync(serverIP, serverPort, password);
                 if (success)
@@ -394,9 +457,9 @@ namespace EZStreamer.Views
             try
             {
                 var obsService = new OBSService();
-                var serverIP = OBSServerTextBox.Text.Trim();
-                var serverPort = int.TryParse(OBSPortTextBox.Text, out int port) ? port : 4455;
-                var password = OBSPasswordBox.Password;
+                var serverIP = OBSServerTextBox?.Text?.Trim() ?? "";
+                var serverPort = int.TryParse(OBSPortTextBox?.Text, out int port) ? port : 4455;
+                var password = OBSPasswordBox?.Password ?? "";
 
                 var success = await obsService.ConnectAsync(serverIP, serverPort, password);
                 if (success)
@@ -425,10 +488,10 @@ namespace EZStreamer.Views
         {
             try
             {
-                if (OverlayThemeComboBox.SelectedItem is ComboBoxItem item)
+                if (!_isInitializing && OverlayThemeComboBox?.SelectedItem is ComboBoxItem item)
                 {
                     var theme = item.Tag?.ToString() ?? "Default";
-                    _overlayService.CreateCustomOverlay(theme);
+                    _overlayService?.CreateCustomOverlay(theme);
                     SaveCurrentSettings();
                 }
             }
@@ -452,7 +515,7 @@ namespace EZStreamer.Views
                     SourcePlatform = "Spotify"
                 };
                 
-                _overlayService.UpdateNowPlaying(testSong);
+                _overlayService?.UpdateNowPlaying(testSong);
                 MessageBox.Show("Overlay preview updated with sample data.", "Preview",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -568,71 +631,95 @@ namespace EZStreamer.Views
 
         private void SaveCurrentSettings()
         {
+            if (_isInitializing) return; // Don't save during initialization
+
             try
             {
                 var settings = _settingsService.LoadSettings();
+                if (settings == null) return;
                 
-                // Update settings from UI
-                settings.EnableChatCommands = EnableChatCommandsCheckBox.IsChecked ?? true;
-                settings.EnableChannelPoints = EnableChannelPointsCheckBox.IsChecked ?? true;
-                settings.ChatCommand = ChatCommandTextBox.Text;
+                // Update settings from UI with null checks
+                if (EnableChatCommandsCheckBox != null)
+                    settings.EnableChatCommands = EnableChatCommandsCheckBox.IsChecked ?? true;
+                if (EnableChannelPointsCheckBox != null)
+                    settings.EnableChannelPoints = EnableChannelPointsCheckBox.IsChecked ?? true;
+                if (ChatCommandTextBox != null)
+                    settings.ChatCommand = ChatCommandTextBox.Text ?? "";
                 
-                if (int.TryParse(MaxQueueLengthTextBox.Text, out int maxQueue))
+                if (MaxQueueLengthTextBox != null && int.TryParse(MaxQueueLengthTextBox.Text, out int maxQueue))
                     settings.MaxQueueLength = maxQueue;
-                if (int.TryParse(RequestCooldownTextBox.Text, out int cooldown))
+                if (RequestCooldownTextBox != null && int.TryParse(RequestCooldownTextBox.Text, out int cooldown))
                     settings.SongRequestCooldown = cooldown;
                 
                 // Music settings
-                settings.PreferredMusicSource = PreferredMusicSourceComboBox.SelectedIndex == 0 ? "Spotify" : "YouTube";
-                settings.AutoPlayNextSong = AutoPlayNextSongCheckBox.IsChecked ?? true;
+                if (PreferredMusicSourceComboBox != null)
+                    settings.PreferredMusicSource = PreferredMusicSourceComboBox.SelectedIndex == 0 ? "Spotify" : "YouTube";
+                if (AutoPlayNextSongCheckBox != null)
+                    settings.AutoPlayNextSong = AutoPlayNextSongCheckBox.IsChecked ?? true;
                 
                 // OBS settings
-                settings.OBSServerIP = OBSServerTextBox.Text;
-                if (int.TryParse(OBSPortTextBox.Text, out int port))
+                if (OBSServerTextBox != null)
+                    settings.OBSServerIP = OBSServerTextBox.Text ?? "";
+                if (OBSPortTextBox != null && int.TryParse(OBSPortTextBox.Text, out int port))
                     settings.OBSServerPort = port;
-                settings.OBSServerPassword = OBSPasswordBox.Password;
-                settings.OBSAutoConnect = OBSAutoConnectCheckBox.IsChecked ?? false;
-                settings.OBSSceneSwitchingEnabled = OBSSceneSwitchingCheckBox.IsChecked ?? false;
+                if (OBSPasswordBox != null)
+                    settings.OBSServerPassword = OBSPasswordBox.Password ?? "";
+                if (OBSAutoConnectCheckBox != null)
+                    settings.OBSAutoConnect = OBSAutoConnectCheckBox.IsChecked ?? false;
+                if (OBSSceneSwitchingCheckBox != null)
+                    settings.OBSSceneSwitchingEnabled = OBSSceneSwitchingCheckBox.IsChecked ?? false;
                 
                 // Overlay settings
-                settings.OverlayTheme = OverlayThemeComboBox.SelectedIndex switch
+                if (OverlayThemeComboBox != null)
                 {
-                    1 => "Minimal",
-                    2 => "Neon", 
-                    3 => "Classic",
-                    _ => "Default"
-                };
-                settings.OverlayShowAlbumArt = OverlayShowAlbumArtCheckBox.IsChecked ?? true;
-                settings.OverlayShowRequester = OverlayShowRequesterCheckBox.IsChecked ?? true;
-                if (int.TryParse(OverlayDurationTextBox.Text, out int duration))
+                    settings.OverlayTheme = OverlayThemeComboBox.SelectedIndex switch
+                    {
+                        1 => "Minimal",
+                        2 => "Neon", 
+                        3 => "Classic",
+                        _ => "Default"
+                    };
+                }
+                
+                if (OverlayShowAlbumArtCheckBox != null)
+                    settings.OverlayShowAlbumArt = OverlayShowAlbumArtCheckBox.IsChecked ?? true;
+                if (OverlayShowRequesterCheckBox != null)
+                    settings.OverlayShowRequester = OverlayShowRequesterCheckBox.IsChecked ?? true;
+                if (OverlayDurationTextBox != null && int.TryParse(OverlayDurationTextBox.Text, out int duration))
                     settings.OverlayDisplayDuration = duration;
                 
                 // Advanced settings
-                settings.AllowExplicitContent = AllowExplicitContentCheckBox.IsChecked ?? true;
-                settings.RequireFollowersOnly = RequireFollowersOnlyCheckBox.IsChecked ?? false;
-                settings.RequireSubscribersOnly = RequireSubscribersOnlyCheckBox.IsChecked ?? false;
-                if (int.TryParse(MinDurationTextBox.Text, out int minDur))
+                if (AllowExplicitContentCheckBox != null)
+                    settings.AllowExplicitContent = AllowExplicitContentCheckBox.IsChecked ?? true;
+                if (RequireFollowersOnlyCheckBox != null)
+                    settings.RequireFollowersOnly = RequireFollowersOnlyCheckBox.IsChecked ?? false;
+                if (RequireSubscribersOnlyCheckBox != null)
+                    settings.RequireSubscribersOnly = RequireSubscribersOnlyCheckBox.IsChecked ?? false;
+                if (MinDurationTextBox != null && int.TryParse(MinDurationTextBox.Text, out int minDur))
                     settings.MinStreamDuration = minDur;
-                if (int.TryParse(MaxDurationTextBox.Text, out int maxDur))
+                if (MaxDurationTextBox != null && int.TryParse(MaxDurationTextBox.Text, out int maxDur))
                     settings.MaxStreamDuration = maxDur;
                 
                 _settingsService.SaveSettings(settings);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
+                Debug.WriteLine($"Failed to save current settings: {ex.Message}");
+                // Don't show UI error for auto-save failures
             }
         }
 
         // Auto-save settings when text changes
         private void SettingsTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            SaveCurrentSettings();
+            if (!_isInitializing)
+                SaveCurrentSettings();
         }
 
         private void SettingsCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            SaveCurrentSettings();
+            if (!_isInitializing)
+                SaveCurrentSettings();
         }
     }
 }
