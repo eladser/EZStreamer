@@ -11,9 +11,6 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Diagnostics;
-using System.Security.Cryptography.X509Certificates;
-using System.Security.Cryptography;
-using System.IO;
 
 namespace EZStreamer.Views
 {
@@ -22,16 +19,16 @@ namespace EZStreamer.Views
         private readonly ConfigurationService _configService;
         private string _clientId;
         private string _clientSecret;
-        private const string REDIRECT_URI = "https://localhost:8443/callback";
-        private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private";
-        
+        private const string REDIRECT_URI = "http://localhost:8888/callback";
+        private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private user-read-email";
+
         private HttpListener _httpListener;
         private bool _isListening = false;
         private CancellationTokenSource _cancellationTokenSource;
         private bool _serverStarted = false;
         private int _debugCounter = 0;
-        private X509Certificate2 _serverCertificate;
         private string _pendingNavigationUrl;
+        private string _refreshToken;
 
         public string AccessToken { get; private set; }
         public bool IsAuthenticated { get; private set; }
@@ -49,10 +46,8 @@ namespace EZStreamer.Views
             
             LogDebug($"ClientId: {(!string.IsNullOrEmpty(_clientId) ? $"SET ({_clientId.Length} chars)" : "NOT SET")}");
             LogDebug($"ClientSecret: {(!string.IsNullOrEmpty(_clientSecret) ? $"SET ({_clientSecret.Length} chars)" : "NOT SET")}");
-            LogDebug($"Administrator check: {IsRunningAsAdministrator()}");
-            LogDebug($"Running as Administrator: {IsRunningAsAdministrator()}");
             LogDebug($"WebView2 Runtime: {GetWebView2Version()}");
-            
+
             LoadingPanel.Visibility = Visibility.Visible;
             
             // Start initialization
@@ -95,17 +90,17 @@ namespace EZStreamer.Views
                     return;
                 }
 
-                LogDebug("✅ Credentials found, starting local HTTPS server...");
+                LogDebug("✅ Credentials found, starting local HTTP callback server...");
                 
                 // Start server in background
                 Task.Run(async () =>
                 {
                     try
                     {
-                        LogDebug("Background task started for HTTPS server");
-                        await StartLocalHttpsServer();
-                        LogDebug("✅ Local HTTPS server started successfully");
-                        
+                        LogDebug("Background task started for HTTP callback server");
+                        await StartLocalHttpServer();
+                        LogDebug("✅ Local HTTP server started successfully");
+
                         Dispatcher.Invoke(() =>
                         {
                             LogDebug("Dispatcher.Invoke - Initializing WebView...");
@@ -114,13 +109,13 @@ namespace EZStreamer.Views
                     }
                     catch (Exception ex)
                     {
-                        LogDebug($"❌ Failed to start local HTTPS server: {ex.Message}");
+                        LogDebug($"❌ Failed to start local HTTP server: {ex.Message}");
                         LogDebug($"Stack trace: {ex.StackTrace}");
-                        
-                        Dispatcher.Invoke(() => 
+
+                        Dispatcher.Invoke(() =>
                         {
-                            ShowError($"Failed to start HTTPS server: {ex.Message}\n\n" +
-                                    "Spotify requires HTTPS for OAuth. Please run EZStreamer as Administrator or use manual token authentication.");
+                            ShowError($"Failed to start callback server: {ex.Message}\n\n" +
+                                    "Please ensure port 8888 is not in use by another application.");
                         });
                     }
                 });
@@ -133,35 +128,23 @@ namespace EZStreamer.Views
             }
         }
 
-        private async Task StartLocalHttpsServer()
+        private async Task StartLocalHttpServer()
         {
             try
             {
-                LogDebug("=== StartLocalHttpsServer Started ===");
-                
-                // Force cleanup any existing certificates and bindings
-                await ForceCleanupExistingBindings();
-                
-                // Setup certificate with improved approach
-                LogDebug("Setting up HTTPS certificate for localhost:8443...");
-                var certSuccess = await SetupHttpsCertificateAdvanced();
-                
-                if (!certSuccess)
-                {
-                    throw new Exception("Failed to setup HTTPS certificate. Please run as Administrator.");
-                }
-                
-                LogDebug("Creating HttpListener for HTTPS...");
+                LogDebug("=== StartLocalHttpServer Started ===");
+
+                LogDebug("Creating HttpListener for HTTP...");
                 _httpListener = new HttpListener();
-                _httpListener.Prefixes.Add("https://localhost:8443/");
-                
-                LogDebug("Starting HTTPS HttpListener...");
+                _httpListener.Prefixes.Add("http://localhost:8888/");
+
+                LogDebug("Starting HTTP HttpListener...");
                 _httpListener.Start();
                 _isListening = true;
                 _serverStarted = true;
-                
-                LogDebug("✅ HTTPS server started successfully on https://localhost:8443/");
-                
+
+                LogDebug("✅ HTTP server started successfully on http://localhost:8888/");
+
                 // Start listening for requests
                 LogDebug("Starting request listener loop...");
                 _ = Task.Run(async () =>
@@ -171,17 +154,16 @@ namespace EZStreamer.Views
                         var requestCount = 0;
                         while (_isListening && !_cancellationTokenSource.Token.IsCancellationRequested)
                         {
-                            LogDebug($"Waiting for HTTPS request #{requestCount + 1}...");
-                            
+                            LogDebug($"Waiting for HTTP request #{requestCount + 1}...");
+
                             var context = await GetContextAsync(_httpListener, _cancellationTokenSource.Token);
                             if (context != null)
                             {
                                 requestCount++;
-                                LogDebug($"✅ Received HTTPS request #{requestCount}: {context.Request.Url}");
+                                LogDebug($"✅ Received HTTP request #{requestCount}: {context.Request.Url}");
                                 LogDebug($"Request method: {context.Request.HttpMethod}");
                                 LogDebug($"User agent: {context.Request.UserAgent}");
-                                LogDebug($"Headers: {context.Request.Headers.Count}");
-                                
+
                                 _ = Task.Run(() => ProcessCallback(context));
                             }
                             else
@@ -193,548 +175,21 @@ namespace EZStreamer.Views
                     }
                     catch (Exception ex)
                     {
-                        LogDebug($"❌ Error in HTTPS server loop: {ex.Message}");
+                        LogDebug($"❌ Error in HTTP server loop: {ex.Message}");
                         LogDebug($"Stack trace: {ex.StackTrace}");
                     }
                 });
-                
-                LogDebug("HTTPS server setup complete");
+
+                LogDebug("HTTP server setup complete");
             }
             catch (Exception ex)
             {
-                LogDebug($"❌ Failed to start HTTPS server: {ex.Message}");
+                LogDebug($"❌ Failed to start HTTP server: {ex.Message}");
                 LogDebug($"Stack trace: {ex.StackTrace}");
                 throw;
             }
         }
 
-        private async Task ForceCleanupExistingBindings()
-        {
-            try
-            {
-                LogDebug("=== ForceCleanupExistingBindings Started ===");
-                
-                // Stop any existing HttpListeners
-                try
-                {
-                    LogDebug("Attempting to stop any existing HttpListeners...");
-                    
-                    // Kill any processes that might be using the port
-                    await KillProcessesUsingPort(8443);
-                    
-                    // Wait a moment for processes to close
-                    await Task.Delay(1000);
-                }
-                catch (Exception ex)
-                {
-                    LogDebug($"Error during process cleanup: {ex.Message}");
-                }
-                
-                // Force delete all possible certificate bindings
-                var deleteCommands = new[]
-                {
-                    "netsh http delete sslcert ipport=0.0.0.0:8443",
-                    "netsh http delete sslcert ipport=127.0.0.1:8443",
-                    "netsh http delete sslcert ipport=[::1]:8443"
-                };
-                
-                foreach (var cmd in deleteCommands)
-                {
-                    try
-                    {
-                        LogDebug($"Running cleanup command: {cmd}");
-                        var result = RunNetshCommand(cmd);
-                        LogDebug($"Cleanup result: {result}");
-                    }
-                    catch (Exception ex)
-                    {
-                        LogDebug($"Cleanup command error: {ex.Message}");
-                    }
-                }
-                
-                LogDebug("Force cleanup completed");
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"Error in ForceCleanupExistingBindings: {ex.Message}");
-            }
-        }
-
-        private async Task KillProcessesUsingPort(int port)
-        {
-            try
-            {
-                LogDebug($"Checking for processes using port {port}...");
-                
-                var startInfo = new ProcessStartInfo
-                {
-                    FileName = "netstat",
-                    Arguments = "-ano",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    CreateNoWindow = true
-                };
-                
-                using (var process = Process.Start(startInfo))
-                {
-                    var output = await process.StandardOutput.ReadToEndAsync();
-                    var lines = output.Split('\n');
-                    
-                    foreach (var line in lines)
-                    {
-                        if (line.Contains($":{port} ") && line.Contains("LISTENING"))
-                        {
-                            var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                            if (parts.Length > 4 && int.TryParse(parts[parts.Length - 1], out var pid))
-                            {
-                                try
-                                {
-                                    LogDebug($"Found process {pid} using port {port}, attempting to kill...");
-                                    var processToKill = Process.GetProcessById(pid);
-                                    processToKill.Kill();
-                                    LogDebug($"✅ Killed process {pid}");
-                                }
-                                catch (Exception ex)
-                                {
-                                    LogDebug($"Could not kill process {pid}: {ex.Message}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"Error checking/killing processes: {ex.Message}");
-            }
-        }
-
-        private async Task<bool> SetupHttpsCertificateAdvanced()
-        {
-            try
-            {
-                LogDebug("=== SetupHttpsCertificateAdvanced Started ===");
-                
-                // Create certificate with exportable private key
-                LogDebug("Creating self-signed certificate for localhost...");
-                _serverCertificate = CreateSelfSignedCertificateAdvanced();
-                
-                LogDebug($"Certificate created - Subject: {_serverCertificate.Subject}");
-                LogDebug($"Certificate thumbprint: {_serverCertificate.Thumbprint}");
-                LogDebug($"Certificate valid from: {_serverCertificate.NotBefore} to {_serverCertificate.NotAfter}");
-                LogDebug($"Has private key: {_serverCertificate.HasPrivateKey}");
-                
-                // Install certificate to multiple stores
-                await InstallCertificateToStores(_serverCertificate);
-                
-                // Bind certificate using advanced approach
-                var bindingSuccess = await AdvancedCertificateBinding(_serverCertificate.Thumbprint);
-                
-                if (!bindingSuccess)
-                {
-                    LogDebug("⚠️ Certificate binding failed, but attempting to continue...");
-                    
-                    // Try alternative approach: use HttpListener without explicit binding
-                    LogDebug("Attempting to use HttpListener with certificate store only...");
-                    
-                    // Sometimes HttpListener can find the certificate from the store automatically
-                    return true;
-                }
-                
-                LogDebug("✅ Certificate setup completed successfully");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ SetupHttpsCertificateAdvanced failed: {ex.Message}");
-                LogDebug($"Stack trace: {ex.StackTrace}");
-                return false;
-            }
-        }
-
-        private X509Certificate2 CreateSelfSignedCertificateAdvanced()
-        {
-            try
-            {
-                LogDebug("=== CreateSelfSignedCertificateAdvanced Started ===");
-                
-                using (var rsa = RSA.Create(2048))
-                {
-                    LogDebug("RSA key created (2048 bits)");
-                    
-                    var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-                    LogDebug("Certificate request created");
-                    
-                    // Add subject alternative names
-                    var sanBuilder = new SubjectAlternativeNameBuilder();
-                    sanBuilder.AddDnsName("localhost");
-                    sanBuilder.AddDnsName("127.0.0.1");
-                    sanBuilder.AddIpAddress(IPAddress.Loopback);
-                    sanBuilder.AddIpAddress(IPAddress.IPv6Loopback);
-                    request.CertificateExtensions.Add(sanBuilder.Build());
-                    LogDebug("Subject Alternative Names added (localhost, 127.0.0.1, ::1)");
-                    
-                    // Add basic constraints
-                    request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
-                    LogDebug("Basic constraints extension added");
-                    
-                    // Add key usage
-                    request.CertificateExtensions.Add(new X509KeyUsageExtension(
-                        X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DataEncipherment, false));
-                    LogDebug("Key usage extension added");
-                        
-                    // Add extended key usage for server authentication
-                    var serverAuthOid = new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1"); // Server Authentication
-                    request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([serverAuthOid], false));
-                    LogDebug("Enhanced key usage extension added (Server Authentication)");
-                    
-                    // Create the certificate with exportable private key
-                    LogDebug("Creating self-signed certificate...");
-                    var certificate = request.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(1));
-                    
-                    // Export and re-import to make sure private key is available
-                    LogDebug("Exporting and re-importing certificate with private key...");
-                    var pfxData = certificate.Export(X509ContentType.Pfx, "EZStreamer");
-                    var reimportedCert = new X509Certificate2(pfxData, "EZStreamer", X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
-                    
-                    LogDebug("✅ Self-signed certificate created successfully");
-                    LogDebug($"Subject: {reimportedCert.Subject}");
-                    LogDebug($"Issuer: {reimportedCert.Issuer}");
-                    LogDebug($"Thumbprint: {reimportedCert.Thumbprint}");
-                    LogDebug($"Serial number: {reimportedCert.SerialNumber}");
-                    LogDebug($"Valid from: {reimportedCert.NotBefore} to {reimportedCert.NotAfter}");
-                    LogDebug($"Has private key: {reimportedCert.HasPrivateKey}");
-                    
-                    return reimportedCert;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ Failed to create self-signed certificate: {ex.Message}");
-                LogDebug($"Stack trace: {ex.StackTrace}");
-                throw;
-            }
-        }
-
-        private async Task InstallCertificateToStores(X509Certificate2 certificate)
-        {
-            try
-            {
-                LogDebug("=== InstallCertificateToStores Started ===");
-                
-                // Install to Current User Root store
-                await Task.Run(() =>
-                {
-                    try
-                    {
-                        LogDebug("Installing to CurrentUser\\Root store...");
-                        using (var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser))
-                        {
-                            store.Open(OpenFlags.ReadWrite);
-                            
-                            // Remove any existing certificates with same thumbprint
-                            var existingCerts = store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, false);
-                            foreach (X509Certificate2 existingCert in existingCerts)
-                            {
-                                store.Remove(existingCert);
-                                LogDebug("Removed existing certificate from CurrentUser\\Root");
-                            }
-                            
-                            store.Add(certificate);
-                            store.Close();
-                            LogDebug("✅ Certificate installed to CurrentUser\\Root store");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LogDebug($"❌ Failed to install to CurrentUser\\Root: {ex.Message}");
-                    }
-                });
-                
-                // Install to Local Machine Root store (if admin)
-                if (IsRunningAsAdministrator())
-                {
-                    await Task.Run(() =>
-                    {
-                        try
-                        {
-                            LogDebug("Installing to LocalMachine\\Root store...");
-                            using (var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine))
-                            {
-                                store.Open(OpenFlags.ReadWrite);
-                                
-                                // Remove any existing certificates with same thumbprint
-                                var existingCerts = store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, false);
-                                foreach (X509Certificate2 existingCert in existingCerts)
-                                {
-                                    store.Remove(existingCert);
-                                    LogDebug("Removed existing certificate from LocalMachine\\Root");
-                                }
-                                
-                                store.Add(certificate);
-                                store.Close();
-                                LogDebug("✅ Certificate installed to LocalMachine\\Root store");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"❌ Failed to install to LocalMachine\\Root: {ex.Message}");
-                        }
-                    });
-                    
-                    // Also install to Personal store
-                    await Task.Run(() =>
-                    {
-                        try
-                        {
-                            LogDebug("Installing to LocalMachine\\My store...");
-                            using (var store = new X509Store(StoreName.My, StoreLocation.LocalMachine))
-                            {
-                                store.Open(OpenFlags.ReadWrite);
-                                
-                                // Remove any existing certificates with same thumbprint
-                                var existingCerts = store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, false);
-                                foreach (X509Certificate2 existingCert in existingCerts)
-                                {
-                                    store.Remove(existingCert);
-                                    LogDebug("Removed existing certificate from LocalMachine\\My");
-                                }
-                                
-                                store.Add(certificate);
-                                store.Close();
-                                LogDebug("✅ Certificate installed to LocalMachine\\My store");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"❌ Failed to install to LocalMachine\\My: {ex.Message}");
-                        }
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ InstallCertificateToStores failed: {ex.Message}");
-            }
-        }
-
-        private async Task<bool> AdvancedCertificateBinding(string thumbprint)
-        {
-            try
-            {
-                LogDebug("=== AdvancedCertificateBinding Started ===");
-                
-                if (!IsRunningAsAdministrator())
-                {
-                    LogDebug("⚠️ Not running as administrator - skipping certificate binding");
-                    return false;
-                }
-                
-                // Multiple binding attempts with different approaches
-                var bindingAttempts = new[]
-                {
-                    new { AppId = "{12345678-1234-1234-1234-123456789012}", Description = "Standard App ID" },
-                    new { AppId = "{00000000-0000-0000-0000-000000000000}", Description = "Null App ID" },
-                    new { AppId = $"{{{Guid.NewGuid()}}}", Description = "Random App ID" },
-                    new { AppId = "{A007CA11-0B89-4F8A-B6D0-3E4B5C6D7E8F}", Description = "Custom App ID" }
-                };
-                
-                foreach (var attempt in bindingAttempts)
-                {
-                    try
-                    {
-                        LogDebug($"Attempting certificate binding with {attempt.Description}: {attempt.AppId}");
-                        
-                        // First ensure no existing binding
-                        RunNetshCommand("netsh http delete sslcert ipport=0.0.0.0:8443");
-                        await Task.Delay(500);
-                        
-                        // Try to add the binding
-                        var addCmd = $"netsh http add sslcert ipport=0.0.0.0:8443 certhash={thumbprint} appid={attempt.AppId}";
-                        var result = RunNetshCommand(addCmd);
-                        
-                        LogDebug($"Binding result: {result}");
-                        
-                        if (result.Contains("successfully") || result.Contains("SSL Certificate successfully added"))
-                        {
-                            LogDebug($"✅ Certificate binding successful with {attempt.Description}");
-                            
-                            // Verify the binding
-                            var verifyResult = RunNetshCommand("netsh http show sslcert ipport=0.0.0.0:8443");
-                            LogDebug($"Binding verification: {verifyResult}");
-                            
-                            if (!verifyResult.Contains("The system cannot find the file specified"))
-                            {
-                                LogDebug("✅ Certificate binding verified successfully");
-                                return true;
-                            }
-                        }
-                        else if (result.Contains("already exists"))
-                        {
-                            LogDebug($"✅ Certificate binding already exists");
-                            return true;
-                        }
-                        else if (result.Contains("Error: 1312"))
-                        {
-                            LogDebug($"❌ Error 1312 with {attempt.Description} - trying next approach...");
-                            continue;
-                        }
-                        else
-                        {
-                            LogDebug($"❌ Binding failed with {attempt.Description}: {result}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LogDebug($"❌ Exception during binding attempt with {attempt.Description}: {ex.Message}");
-                    }
-                    
-                    // Wait between attempts
-                    await Task.Delay(1000);
-                }
-                
-                // If all binding attempts failed, try a different approach using WinHTTP
-                LogDebug("All standard binding attempts failed - trying WinHTTP approach...");
-                return await TryWinHttpBinding(thumbprint);
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ AdvancedCertificateBinding failed: {ex.Message}");
-                return false;
-            }
-        }
-
-        private async Task<bool> TryWinHttpBinding(string thumbprint)
-        {
-            try
-            {
-                LogDebug("=== TryWinHttpBinding Started ===");
-                
-                // Use PowerShell to bind the certificate (sometimes more reliable)
-                var psScript = $@"
-                    try {{
-                        # Remove existing binding
-                        netsh http delete sslcert ipport=0.0.0.0:8443 2>$null
-                        
-                        # Add new binding using PowerShell approach
-                        $cert = Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object {{$_.Thumbprint -eq '{thumbprint}'}}
-                        if ($cert) {{
-                            netsh http add sslcert ipport=0.0.0.0:8443 certhash={thumbprint} appid={{EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE}}
-                            Write-Output 'SUCCESS'
-                        }} else {{
-                            Write-Output 'CERT_NOT_FOUND'
-                        }}
-                    }} catch {{
-                        Write-Output 'ERROR: ' + $_.Exception.Message
-                    }}
-                ";
-                
-                var psResult = RunPowerShellCommand(psScript);
-                LogDebug($"PowerShell binding result: {psResult}");
-                
-                if (psResult.Contains("SUCCESS"))
-                {
-                    LogDebug("✅ PowerShell certificate binding successful");
-                    return true;
-                }
-                
-                LogDebug("❌ PowerShell binding also failed");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ TryWinHttpBinding failed: {ex.Message}");
-                return false;
-            }
-        }
-
-        private string RunPowerShellCommand(string script)
-        {
-            try
-            {
-                LogDebug("Running PowerShell command...");
-                
-                using (var process = new Process())
-                {
-                    process.StartInfo.FileName = "powershell.exe";
-                    process.StartInfo.Arguments = $"-Command \"{script}\"";
-                    process.StartInfo.RedirectStandardOutput = true;
-                    process.StartInfo.RedirectStandardError = true;
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.CreateNoWindow = true;
-                    process.StartInfo.Verb = "runas"; // Request elevation if needed
-                    
-                    process.Start();
-                    var output = process.StandardOutput.ReadToEnd();
-                    var error = process.StandardError.ReadToEnd();
-                    process.WaitForExit();
-                    
-                    LogDebug($"PowerShell exit code: {process.ExitCode}");
-                    if (!string.IsNullOrEmpty(output))
-                        LogDebug($"PowerShell output: {output}");
-                    if (!string.IsNullOrEmpty(error))
-                        LogDebug($"PowerShell error: {error}");
-                    
-                    return output + error;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ Failed to run PowerShell command: {ex.Message}");
-                return ex.Message;
-            }
-        }
-
-        private bool IsRunningAsAdministrator()
-        {
-            try
-            {
-                var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-                var principal = new System.Security.Principal.WindowsPrincipal(identity);
-                return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"Error checking administrator status: {ex.Message}");
-                return false;
-            }
-        }
-
-        private string RunNetshCommand(string command)
-        {
-            try
-            {
-                LogDebug($"Running netsh command: {command}");
-                
-                using (var process = new Process())
-                {
-                    process.StartInfo.FileName = "cmd.exe";
-                    process.StartInfo.Arguments = $"/c {command}";
-                    process.StartInfo.RedirectStandardOutput = true;
-                    process.StartInfo.RedirectStandardError = true;
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.CreateNoWindow = true;
-                    
-                    process.Start();
-                    var output = process.StandardOutput.ReadToEnd();
-                    var error = process.StandardError.ReadToEnd();
-                    process.WaitForExit();
-                    
-                    LogDebug($"Netsh exit code: {process.ExitCode}");
-                    if (!string.IsNullOrEmpty(output))
-                        LogDebug($"Netsh output: {output}");
-                    if (!string.IsNullOrEmpty(error))
-                        LogDebug($"Netsh error: {error}");
-                    
-                    return output + error;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ Failed to run netsh command: {ex.Message}");
-                return ex.Message;
-            }
-        }
 
         private async Task<HttpListenerContext> GetContextAsync(HttpListener listener, CancellationToken cancellationToken)
         {
@@ -907,26 +362,35 @@ namespace EZStreamer.Views
                             if (!string.IsNullOrEmpty(tokenResponse?.access_token))
                             {
                                 AccessToken = tokenResponse.access_token;
+                                _refreshToken = tokenResponse.refresh_token;
                                 IsAuthenticated = true;
-                                
+
+                                // Save refresh token to settings
+                                var settingsService = new SettingsService();
+                                var settings = settingsService.LoadSettings();
+                                settings.SpotifyRefreshToken = _refreshToken;
+                                settings.SpotifyAccessToken = AccessToken;
+                                settings.SpotifyTokenExpiry = DateTime.Now.AddSeconds(tokenResponse.expires_in);
+                                settingsService.SaveSettings(settings);
+
                                 LogDebug($"✅ Access token stored successfully");
+                                LogDebug($"✅ Refresh token saved: {!string.IsNullOrEmpty(_refreshToken)}");
                                 LogDebug($"IsAuthenticated set to: {IsAuthenticated}");
-                                
+
                                 Dispatcher.Invoke(() =>
                                 {
                                     LogDebug("Dispatcher.Invoke - Showing success message");
                                     LoadingPanel.Visibility = Visibility.Collapsed;
-                                    
+
                                     MessageBox.Show(
                                         $"🎵 Successfully connected to Spotify!\n\n" +
                                         $"✅ Access token received\n" +
-                                        $"⏰ Expires in: {tokenResponse.expires_in} seconds\n" +
-                                        $"🔄 Refresh token: {(!string.IsNullOrEmpty(tokenResponse.refresh_token) ? "Available" : "Not provided")}\n" +
-                                        $"🔒 HTTPS connection established successfully",
-                                        "Spotify Authentication Success", 
-                                        MessageBoxButton.OK, 
+                                        $"⏰ Expires in: {tokenResponse.expires_in / 3600} hours\n" +
+                                        $"🔄 Refresh token: {(!string.IsNullOrEmpty(tokenResponse.refresh_token) ? "Saved for automatic renewal" : "Not provided")}",
+                                        "Spotify Authentication Success",
+                                        MessageBoxButton.OK,
                                         MessageBoxImage.Information);
-                                    
+
                                     LogDebug("Setting DialogResult = true and closing window");
                                     DialogResult = true;
                                     Close();
@@ -981,13 +445,13 @@ namespace EZStreamer.Views
             // Initialize WebView2 immediately if server is ready
             if (_serverStarted)
             {
-                LogDebug("✅ HTTPS server confirmed started, initializing WebView2...");
+                LogDebug("✅ HTTP server confirmed started, initializing WebView2...");
                 InitializeWebView2();
             }
             else
             {
-                LogDebug("❌ HTTPS server not started, cannot proceed");
-                ShowError("HTTPS server failed to start. Spotify requires HTTPS for OAuth.\n\nPlease run EZStreamer as Administrator.");
+                LogDebug("❌ HTTP server not started, cannot proceed");
+                ShowError("HTTP callback server failed to start.\n\nPlease ensure port 8888 is not in use by another application.");
             }
         }
 
@@ -1178,21 +642,7 @@ namespace EZStreamer.Views
             if (!e.IsSuccess)
             {
                 LogDebug($"❌ Navigation failed with error: {e.WebErrorStatus}");
-                
-                // If navigation failed due to certificate issues, provide helpful error
-                if (e.WebErrorStatus.ToString().Contains("Certificate") || 
-                    e.WebErrorStatus.ToString().Contains("SSL") ||
-                    e.WebErrorStatus.ToString().Contains("Security"))
-                {
-                    LogDebug("🔒 Certificate/SSL error detected");
-                    ShowError($"HTTPS certificate error: {e.WebErrorStatus}\n\n" +
-                             "The HTTPS server setup failed. Please run EZStreamer as Administrator to enable HTTPS authentication.");
-                }
-                else
-                {
-                    LogDebug($"❌ Other navigation error: {e.WebErrorStatus}");
-                    ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
-                }
+                ShowError($"OAuth navigation failed: {e.WebErrorStatus}\n\nPlease ensure you're connected to the internet.");
             }
             else
             {
@@ -1239,21 +689,7 @@ namespace EZStreamer.Views
             if (!e.IsSuccess)
             {
                 LogDebug($"❌ WebView navigation failed with error: {e.WebErrorStatus}");
-                
-                // Check for certificate/SSL errors
-                if (e.WebErrorStatus.ToString().Contains("Certificate") || 
-                    e.WebErrorStatus.ToString().Contains("SSL") ||
-                    e.WebErrorStatus.ToString().Contains("Security"))
-                {
-                    LogDebug("🔒 Certificate/SSL error in XAML handler");
-                    ShowError($"HTTPS certificate error: {e.WebErrorStatus}\n\n" +
-                             "The self-signed certificate was rejected.\n" +
-                             "Please run EZStreamer as Administrator.");
-                }
-                else
-                {
-                    ShowError($"OAuth navigation failed: {e.WebErrorStatus}");
-                }
+                ShowError($"OAuth navigation failed: {e.WebErrorStatus}\n\nPlease ensure you're connected to the internet.");
             }
         }
 
@@ -1266,7 +702,7 @@ namespace EZStreamer.Views
                 "Spotify Client ID and Secret are required for OAuth authentication.\n\n" +
                 "Would you like to configure them now?\n\n" +
                 "Get them from: https://developer.spotify.com/dashboard\n\n" +
-                "IMPORTANT: Set redirect URI to: https://localhost:8443/callback",
+                "IMPORTANT: Set redirect URI to: http://localhost:8888/callback",
                 "OAuth Configuration Required",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
@@ -1295,7 +731,7 @@ namespace EZStreamer.Views
                 "3. Enter your Client ID and Secret\n" +
                 "4. Click Save\n" +
                 "5. Try Test Connection again\n\n" +
-                "IMPORTANT: Set redirect URI to: https://localhost:8443/callback",
+                "IMPORTANT: Set redirect URI to: http://localhost:8888/callback",
                 "Configure Credentials",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -1458,7 +894,7 @@ namespace EZStreamer.Views
                 {
                     _httpListener.Stop();
                     _httpListener.Close();
-                    LogDebug("✅ HTTPS server stopped");
+                    LogDebug("✅ HTTP server stopped");
                 }
 
                 // Clean up WebView2
@@ -1470,10 +906,9 @@ namespace EZStreamer.Views
                     AuthWebView.CoreWebView2.DOMContentLoaded -= CoreWebView2_DOMContentLoaded;
                     LogDebug("WebView2 event handlers removed");
                 }
-                
+
                 AuthWebView?.Dispose();
                 _cancellationTokenSource?.Dispose();
-                _serverCertificate?.Dispose();
                 
                 LogDebug("✅ SpotifyAuthWindow cleanup completed");
                 LogDebug($"Final state - IsAuthenticated: {IsAuthenticated}, AccessToken: {(!string.IsNullOrEmpty(AccessToken) ? "SET" : "NOT SET")}");
@@ -1485,15 +920,5 @@ namespace EZStreamer.Views
             
             base.OnClosed(e);
         }
-    }
-
-    // Response model for Spotify token exchange
-    public class SpotifyTokenResponse
-    {    
-        public string access_token { get; set; }
-        public string token_type { get; set; }
-        public string scope { get; set; }
-        public int expires_in { get; set; }
-        public string refresh_token { get; set; }
     }
 }
