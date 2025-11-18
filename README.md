@@ -35,7 +35,8 @@ EZStreamer helps you manage your Twitch stream by letting your viewers request s
 1. Download and run EZStreamer
 2. Configure Spotify:
    - Create app at https://developer.spotify.com/dashboard
-   - **Important:** Set redirect URI to `http://localhost:8888/callback`
+   - **CRITICAL:** Set redirect URI to `http://127.0.0.1:8888/callback`
+   - **Must use 127.0.0.1, NOT localhost** (Spotify requirement as of Nov 2025)
    - Enter credentials in Settings
 3. Configure YouTube (optional):
    - Get API key from https://console.cloud.google.com/
@@ -81,7 +82,8 @@ Set up a custom reward and viewers can redeem it with their song request
 - Check Windows Firewall settings
 
 **Spotify "Invalid redirect URI"**
-- Must be exactly: `http://localhost:8888/callback`
+- Must be exactly: `http://127.0.0.1:8888/callback`
+- **Use 127.0.0.1, NOT localhost** (Spotify deprecated localhost on Nov 27, 2025)
 - Update in Spotify dashboard if changed
 
 **YouTube "API quota exceeded"**

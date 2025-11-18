@@ -8,10 +8,11 @@ This document outlines all the major improvements, bug fixes, and enhancements m
 **Problem:** The previous implementation was overly complex with 1500+ lines of HTTPS certificate handling code, requiring administrator privileges and frequently failing.
 
 **Solution:**
-- Simplified from HTTPS to HTTP callback server (Spotify allows `http://localhost` for development)
+- Simplified from HTTPS to HTTP callback server using loopback IP
 - Removed ~500 lines of complex certificate binding code
 - No longer requires administrator privileges
-- Changed redirect URI from `https://localhost:8443/callback` to `http://localhost:8888/callback`
+- Changed redirect URI from `https://localhost:8443/callback` to `http://127.0.0.1:8888/callback`
+- Uses 127.0.0.1 (loopback IP) instead of localhost per Spotify's Nov 2025 requirements
 - Much more reliable and easier to set up
 
 **Files Changed:**
@@ -76,13 +77,18 @@ This document outlines all the major improvements, bug fixes, and enhancements m
 
 1. Go to https://developer.spotify.com/dashboard
 2. Create a new app or use existing one
-3. **IMPORTANT:** Add this redirect URI: `http://localhost:8888/callback`
+3. **CRITICAL:** Add this redirect URI: `http://127.0.0.1:8888/callback`
+   - **Must use 127.0.0.1, NOT localhost!**
+   - Spotify deprecated localhost aliases on November 27, 2025
 4. Copy your Client ID and Client Secret
 5. In EZStreamer, go to Settings → Spotify API Credentials
 6. Enter your Client ID and Secret
 7. Click "Test Connection" to authenticate
 
-**Note:** The redirect URI has changed from `https://localhost:8443/callback` to `http://localhost:8888/callback`. Make sure to update this in your Spotify app settings.
+**Important Notes:**
+- The redirect URI has changed from `https://localhost:8443/callback` to `http://127.0.0.1:8888/callback`
+- You MUST use the IP address `127.0.0.1` instead of `localhost`
+- This is a Spotify requirement as of their November 27, 2025 security update
 
 ### 2. YouTube Configuration
 
@@ -159,9 +165,13 @@ This document outlines all the major improvements, bug fixes, and enhancements m
 If you were using the old version:
 
 ### Spotify Users:
-1. Update your Spotify app's redirect URI to `http://localhost:8888/callback`
-2. Re-authenticate in EZStreamer
-3. Your refresh token will be saved for automatic renewal
+1. Update your Spotify app's redirect URI to `http://127.0.0.1:8888/callback`
+2. **IMPORTANT:** Use 127.0.0.1, NOT localhost (Spotify requirement as of Nov 2025)
+3. Re-authenticate in EZStreamer
+4. Your refresh token will be saved for automatic renewal
+
+### Why 127.0.0.1 Instead of localhost?
+Spotify announced in 2025 that they will deprecate localhost aliases on November 27, 2025. Only loopback IP addresses (127.0.0.1 for IPv4, [::1] for IPv6) will be supported for local development. This change ensures EZStreamer will continue working after the migration deadline.
 
 ### YouTube Users:
 1. Get a YouTube Data API v3 key (previously not required)

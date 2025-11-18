@@ -19,7 +19,9 @@ namespace EZStreamer.Views
         private readonly ConfigurationService _configService;
         private string _clientId;
         private string _clientSecret;
-        private const string REDIRECT_URI = "http://localhost:8888/callback";
+        // Using loopback IP (127.0.0.1) instead of localhost per Spotify's Nov 2025 requirements
+        // Spotify will deprecate localhost aliases on November 27, 2025
+        private const string REDIRECT_URI = "http://127.0.0.1:8888/callback";
         private const string SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private user-read-email";
 
         private HttpListener _httpListener;
@@ -136,14 +138,15 @@ namespace EZStreamer.Views
 
                 LogDebug("Creating HttpListener for HTTP...");
                 _httpListener = new HttpListener();
-                _httpListener.Prefixes.Add("http://localhost:8888/");
+                // Use 127.0.0.1 instead of localhost for Spotify compatibility
+                _httpListener.Prefixes.Add("http://127.0.0.1:8888/");
 
                 LogDebug("Starting HTTP HttpListener...");
                 _httpListener.Start();
                 _isListening = true;
                 _serverStarted = true;
 
-                LogDebug("✅ HTTP server started successfully on http://localhost:8888/");
+                LogDebug("✅ HTTP server started successfully on http://127.0.0.1:8888/");
 
                 // Start listening for requests
                 LogDebug("Starting request listener loop...");
@@ -702,7 +705,8 @@ namespace EZStreamer.Views
                 "Spotify Client ID and Secret are required for OAuth authentication.\n\n" +
                 "Would you like to configure them now?\n\n" +
                 "Get them from: https://developer.spotify.com/dashboard\n\n" +
-                "IMPORTANT: Set redirect URI to: http://localhost:8888/callback",
+                "IMPORTANT: Set redirect URI to: http://127.0.0.1:8888/callback\n" +
+                "(Use 127.0.0.1, NOT localhost - Spotify requirement)",
                 "OAuth Configuration Required",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
@@ -731,7 +735,8 @@ namespace EZStreamer.Views
                 "3. Enter your Client ID and Secret\n" +
                 "4. Click Save\n" +
                 "5. Try Test Connection again\n\n" +
-                "IMPORTANT: Set redirect URI to: http://localhost:8888/callback",
+                "IMPORTANT: Set redirect URI to: http://127.0.0.1:8888/callback\n" +
+                "(Use 127.0.0.1, NOT localhost - Spotify requirement)",
                 "Configure Credentials",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);

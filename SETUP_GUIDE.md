@@ -29,7 +29,8 @@ Welcome to EZStreamer! This guide will walk you through setting up your song req
 4. Fill in the form:
    - **App name:** EZStreamer (or your choice)
    - **App description:** Song request system for streaming
-   - **Redirect URI:** `http://localhost:8888/callback` ⚠️ **IMPORTANT**
+   - **Redirect URI:** `http://127.0.0.1:8888/callback` ⚠️ **CRITICAL**
+   - **MUST use 127.0.0.1, NOT localhost** (Spotify requirement!)
    - **Which API/SDKs are you planning to use?** Select "Web API"
 5. Accept terms and click **Create**
 6. You'll see your **Client ID** and **Client Secret** (click "View client secret")
@@ -47,7 +48,8 @@ Welcome to EZStreamer! This guide will walk you through setting up your song req
 
 **Troubleshooting:**
 - If you see "Failed to start callback server", ensure port 8888 is not in use
-- If authorization fails, verify the redirect URI is exactly `http://localhost:8888/callback`
+- If authorization fails, verify the redirect URI is exactly `http://127.0.0.1:8888/callback`
+- **You MUST use 127.0.0.1, NOT localhost** - Spotify requirement as of Nov 2025
 - Check that both Client ID and Secret are correct (no extra spaces)
 
 ### Step 3: Configure YouTube (Optional)
@@ -251,7 +253,8 @@ Customize the song request command:
 - Close other applications or change the port in Windows Firewall
 
 **"Invalid redirect URI"**
-- Ensure redirect URI in Spotify dashboard is exactly: `http://localhost:8888/callback`
+- Ensure redirect URI in Spotify dashboard is exactly: `http://127.0.0.1:8888/callback`
+- **MUST use 127.0.0.1, NOT localhost** (Spotify deprecated localhost Nov 27, 2025)
 - No HTTPS, no trailing slash, correct port
 
 **"Token expired"**
