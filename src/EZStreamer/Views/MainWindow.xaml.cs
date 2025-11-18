@@ -62,6 +62,9 @@ namespace EZStreamer.Views
             UpdateQueueDisplay();
             
             StatusText.Text = "EZStreamer ready! Connect to Twitch and type !songrequest <song name> in chat to test.";
+
+            // Show setup wizard on first run
+            CheckAndShowSetupWizard();
         }
 
         private void LoadSettings()
@@ -708,6 +711,32 @@ namespace EZStreamer.Views
             catch (Exception ex)
             {
                 Debug.WriteLine($"Auto-connect to OBS failed: {ex.Message}");
+            }
+        }
+
+        private void CheckAndShowSetupWizard()
+        {
+            try
+            {
+                var settings = _settingsService.LoadSettings();
+
+                // Check if first run (version not set or old version)
+                // Show wizard if LastUsedVersion is empty or still at default "1.0.0"
+                if (string.IsNullOrEmpty(settings.LastUsedVersion) || settings.LastUsedVersion == "1.0.0")
+                {
+                    // Show setup wizard
+                    var wizard = new SetupWizardWindow();
+                    wizard.ShowDialog();
+
+                    // Update version to indicate setup wizard has been shown
+                    settings.LastUsedVersion = "2.0.0";
+                    _settingsService.SaveSettings(settings);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error checking for first run: {ex.Message}");
+                // Don't show error to user - just skip wizard if there's an issue
             }
         }
 

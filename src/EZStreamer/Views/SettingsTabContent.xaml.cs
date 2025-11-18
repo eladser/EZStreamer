@@ -709,6 +709,52 @@ namespace EZStreamer.Views
             }
         }
 
+        private void ShowSetupWizard_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var wizard = new SetupWizardWindow();
+                wizard.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening setup wizard: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void CopySpotifyRedirectURI_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Windows.Clipboard.SetText("http://127.0.0.1:8888/callback");
+                MessageBox.Show("✅ Redirect URI copied to clipboard!\n\nPaste this in your Spotify app settings.",
+                    "Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to copy: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = e.Uri.AbsoluteUri,
+                    UseShellExecute = true
+                });
+                e.Handled = true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error opening hyperlink: {ex.Message}");
+            }
+        }
+
         // Auto-save settings when text changes
         private void SettingsTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
