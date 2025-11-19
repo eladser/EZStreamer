@@ -227,7 +227,7 @@
                                     <Run Text="Enable "/>
                                     <Run Text='"YouTube Data API v3"' FontWeight="Bold"/>
                                     <LineBreak/>
-                                    <Run Text="   (Go to APIs & Services → Library)" FontStyle="Italic"/>
+                                    <Run Text="   (Go to APIs &amp; Services → Library)" FontStyle="Italic"/>
                                 </TextBlock>
                             </StackPanel>
 
@@ -236,7 +236,7 @@
                                 <TextBlock TextWrapping="Wrap">
                                     <Run Text="Create an API Key"/>
                                     <LineBreak/>
-                                    <Run Text="   (Go to APIs & Services → Credentials → Create Credentials → API Key)" FontStyle="Italic"/>
+                                    <Run Text="   (Go to APIs &amp; Services → Credentials → Create Credentials → API Key)" FontStyle="Italic"/>
                                 </TextBlock>
                             </StackPanel>
                         </StackPanel>
