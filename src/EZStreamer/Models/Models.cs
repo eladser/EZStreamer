@@ -38,6 +38,8 @@ namespace EZStreamer.Models
         // Authentication
         public string TwitchAccessToken { get; set; } = string.Empty;
         public string SpotifyAccessToken { get; set; } = string.Empty;
+        public string SpotifyRefreshToken { get; set; } = string.Empty;
+        public DateTime SpotifyTokenExpiry { get; set; } = DateTime.MinValue;
         public string TwitchClientId { get; set; } = string.Empty;
         public string SpotifyClientId { get; set; } = string.Empty;
         

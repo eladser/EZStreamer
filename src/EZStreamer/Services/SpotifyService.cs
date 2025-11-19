@@ -12,9 +12,13 @@ namespace EZStreamer.Services
     public class SpotifyService
     {
         private string _accessToken;
+        private string _refreshToken;
+        private DateTime _tokenExpiry;
         private bool _isConnected;
         private readonly HttpClient _httpClient;
         private string _activeDeviceId;
+        private readonly SettingsService _settingsService;
+        private readonly ConfigurationService _configService;
 
         public bool IsConnected => _isConnected;
         public string ActiveDeviceName => _isConnected ? "EZStreamer Player" : "No device selected";
@@ -28,6 +32,12 @@ namespace EZStreamer.Services
         {
             _isConnected = false;
             _httpClient = new HttpClient();
+            _settingsService = new SettingsService();
+            _configService = new ConfigurationService();
+            _tokenExpiry = DateTime.MinValue;
+
+            // Try to load existing tokens from settings
+            LoadTokensFromSettings();
         }
 
         public async Task Connect(string accessToken)
@@ -129,6 +139,9 @@ namespace EZStreamer.Services
                     return new List<SongRequest>();
                 }
 
+                // Ensure token is valid before making API request
+                await EnsureValidToken();
+
                 var encodedQuery = Uri.EscapeDataString(query);
                 var request = new HttpRequestMessage(HttpMethod.Get, 
                     $"https://api.spotify.com/v1/search?q={encodedQuery}&type=track&limit={limit}");
@@ -182,6 +195,9 @@ namespace EZStreamer.Services
                 {
                     return false;
                 }
+
+                // Ensure token is valid before making API request
+                await EnsureValidToken();
 
                 var playData = new
                 {
@@ -495,6 +511,111 @@ namespace EZStreamer.Services
             }
         }
 
+        private void LoadTokensFromSettings()
+        {
+            try
+            {
+                var settings = _settingsService.LoadSettings();
+                if (!string.IsNullOrEmpty(settings.SpotifyAccessToken))
+                {
+                    _accessToken = settings.SpotifyAccessToken;
+                    _refreshToken = settings.SpotifyRefreshToken;
+                    _tokenExpiry = settings.SpotifyTokenExpiry;
+                    System.Diagnostics.Debug.WriteLine("Loaded Spotify tokens from settings");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load Spotify tokens: {ex.Message}");
+            }
+        }
+
+        private async Task<bool> RefreshAccessToken()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_refreshToken))
+                {
+                    System.Diagnostics.Debug.WriteLine("No refresh token available");
+                    return false;
+                }
+
+                var credentials = _configService.GetAPICredentials();
+                if (string.IsNullOrEmpty(credentials.SpotifyClientId) || string.IsNullOrEmpty(credentials.SpotifyClientSecret))
+                {
+                    System.Diagnostics.Debug.WriteLine("Spotify credentials not configured");
+                    return false;
+                }
+
+                var requestData = new Dictionary<string, string>
+                {
+                    ["grant_type"] = "refresh_token",
+                    ["refresh_token"] = _refreshToken,
+                    ["client_id"] = credentials.SpotifyClientId,
+                    ["client_secret"] = credentials.SpotifyClientSecret
+                };
+
+                var requestContent = new FormUrlEncodedContent(requestData);
+                var response = await _httpClient.PostAsync("https://accounts.spotify.com/api/token", requestContent);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var tokenResponse = JsonSerializer.Deserialize<SpotifyTokenResponse>(responseContent);
+
+                    if (!string.IsNullOrEmpty(tokenResponse?.access_token))
+                    {
+                        _accessToken = tokenResponse.access_token;
+                        _tokenExpiry = DateTime.Now.AddSeconds(tokenResponse.expires_in);
+
+                        // Update refresh token if a new one was provided
+                        if (!string.IsNullOrEmpty(tokenResponse.refresh_token))
+                        {
+                            _refreshToken = tokenResponse.refresh_token;
+                        }
+
+                        // Save updated tokens to settings
+                        var settings = _settingsService.LoadSettings();
+                        settings.SpotifyAccessToken = _accessToken;
+                        settings.SpotifyRefreshToken = _refreshToken;
+                        settings.SpotifyTokenExpiry = _tokenExpiry;
+                        _settingsService.SaveSettings(settings);
+
+                        System.Diagnostics.Debug.WriteLine("Spotify access token refreshed successfully");
+                        return true;
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Token refresh failed: {response.StatusCode}");
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error refreshing Spotify token: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task EnsureValidToken()
+        {
+            try
+            {
+                // Check if token is expired or about to expire (within 5 minutes)
+                if (_tokenExpiry != DateTime.MinValue && DateTime.Now >= _tokenExpiry.AddMinutes(-5))
+                {
+                    System.Diagnostics.Debug.WriteLine("Spotify token expired or expiring soon, refreshing...");
+                    await RefreshAccessToken();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error ensuring valid token: {ex.Message}");
+            }
+        }
+
         public void Dispose()
         {
             try
@@ -507,6 +628,16 @@ namespace EZStreamer.Services
                 System.Diagnostics.Debug.WriteLine($"Error disposing SpotifyService: {ex.Message}");
             }
         }
+    }
+
+    // Token response model
+    public class SpotifyTokenResponse
+    {
+        public string access_token { get; set; }
+        public string token_type { get; set; }
+        public string scope { get; set; }
+        public int expires_in { get; set; }
+        public string refresh_token { get; set; }
     }
 
     // Models for Spotify API responses

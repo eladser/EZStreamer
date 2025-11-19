@@ -27,6 +27,32 @@
     
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="16">
+            <!-- Quick Help Card -->
+            <materialDesign:Card Background="#E8F5E9" Padding="16" Margin="0,0,0,16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <materialDesign:PackIcon Grid.Column="0" Kind="HelpCircle" Width="32" Height="32" Foreground="#4CAF50" Margin="0,0,16,0" VerticalAlignment="Center"/>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Need Help Getting Started?" FontWeight="Bold" FontSize="14"/>
+                        <TextBlock Text="Use our step-by-step setup wizard to configure everything easily!" FontSize="12" Opacity="0.8"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="2"
+                          Content="🧙 Setup Wizard"
+                          Click="ShowSetupWizard_Click"
+                          Style="{StaticResource MaterialDesignRaisedButton}"
+                          Background="#4CAF50"
+                          Foreground="White"
+                          VerticalAlignment="Center"/>
+                </Grid>
+            </materialDesign:Card>
+
             <!-- API Credentials Configuration -->
             <materialDesign:Card Style="{StaticResource ContentCard}">
                 <StackPanel>
@@ -72,35 +98,81 @@
                     </Expander>
                     
                     <!-- Spotify Credentials -->
-                    <Expander Header="Spotify API Credentials" Margin="0,0,0,12">
+                    <Expander Header="🎵 Spotify API Credentials (Recommended)" Margin="0,0,0,12">
                         <StackPanel Margin="0,8,0,0">
-                            <Grid Margin="0,0,0,8">
+                            <Grid Margin="0,0,0,12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Ellipse Grid.Column="0" x:Name="SpotifyStatusSettings" Style="{StaticResource DisconnectedStatus}"/>
-                                <TextBlock Grid.Column="1" Text="Status" VerticalAlignment="Center"/>
-                                <Button Grid.Column="2" Content="Test Connection" 
-                                      Style="{StaticResource MaterialDesignOutlinedButton}"
-                                      Click="ConnectSpotify_Click"/>
+                                <TextBlock Grid.Column="1" Text="Not Connected" VerticalAlignment="Center"/>
+                                <Button Grid.Column="2" Content="✅ Test Connection"
+                                      Style="{StaticResource MaterialDesignRaisedButton}"
+                                      Click="ConnectSpotify_Click"
+                                      Background="#1DB954"
+                                      Foreground="White"/>
                             </Grid>
-                            
+
+                            <!-- CRITICAL INFO BOX -->
+                            <materialDesign:Card Background="#FFF59D" Padding="12" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="⚠️ IMPORTANT SETUP STEP:" FontWeight="Bold" Foreground="#F57C00" FontSize="14"/>
+                                    <TextBlock TextWrapping="Wrap" Margin="0,8,0,8" FontSize="12">
+                                        Before entering credentials, set this as your Redirect URI in Spotify:
+                                    </TextBlock>
+
+                                    <Border Background="White" Padding="8" BorderBrush="#673AB7" BorderThickness="2" CornerRadius="4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                     Text="http://127.0.0.1:8888/callback"
+                                                     FontFamily="Consolas"
+                                                     FontWeight="Bold"
+                                                     VerticalAlignment="Center"
+                                                     FontSize="13"/>
+                                            <Button Grid.Column="1"
+                                                  Content="📋 Copy"
+                                                  Click="CopySpotifyRedirectURI_Click"
+                                                  Style="{StaticResource MaterialDesignFlatButton}"/>
+                                        </Grid>
+                                    </Border>
+
+                                    <TextBlock Text="⚡ Must use 127.0.0.1, NOT localhost! (Spotify requirement)"
+                                             FontWeight="Bold"
+                                             Foreground="#D32F2F"
+                                             FontSize="11"
+                                             Margin="0,8,0,0"/>
+
+                                    <TextBlock Margin="0,8,0,0" FontSize="11" Opacity="0.8">
+                                        <Run Text="Get credentials from: "/>
+                                        <Hyperlink NavigateUri="https://developer.spotify.com/dashboard" RequestNavigate="Hyperlink_RequestNavigate">
+                                            developer.spotify.com/dashboard
+                                        </Hyperlink>
+                                    </TextBlock>
+                                </StackPanel>
+                            </materialDesign:Card>
+
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="Client ID:" Width="100" VerticalAlignment="Center"/>
-                                <TextBox x:Name="SpotifyClientIdTextBox" Width="300" Margin="0,0,8,0"/>
-                                <Button Content="Save" Click="SaveSpotifyCredentials_Click" 
+                                <TextBox x:Name="SpotifyClientIdTextBox"
+                                       Width="300"
+                                       Margin="0,0,8,0"
+                                       materialDesign:HintAssist.Hint="Paste your Client ID here"/>
+                                <Button Content="💾 Save" Click="SaveSpotifyCredentials_Click"
                                       Style="{StaticResource MaterialDesignRaisedButton}"/>
                             </StackPanel>
-                            
+
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="Client Secret:" Width="100" VerticalAlignment="Center"/>
-                                <PasswordBox x:Name="SpotifyClientSecretTextBox" Width="300"/>
+                                <PasswordBox x:Name="SpotifyClientSecretTextBox"
+                                           Width="300"
+                                           materialDesign:HintAssist.Hint="Paste your Client Secret"/>
                             </StackPanel>
-                            
-                            <TextBlock Text="Get your Spotify API credentials from: https://developer.spotify.com/dashboard" 
-                                     Opacity="0.7" FontSize="11" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Expander>
                     
